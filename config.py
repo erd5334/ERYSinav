@@ -26,10 +26,8 @@ EXPORTS_DIR = DATA_DIR / 'exports'
 BACKUPS_DIR = DATA_DIR / 'backups'
 LOGO_PATH = IMAGES_DIR / 'logo.png'
 ICON_PATH = IMAGES_DIR / 'logo.ico'
-PY_OPTIK_DIR = BASE_DIR / 'py_optik'
-
 # Create directories
-for directory in [DATA_DIR, IMAGES_DIR, TEMPLATES_DIR, EXPORTS_DIR, BACKUPS_DIR, PY_OPTIK_DIR]:
+for directory in [DATA_DIR, IMAGES_DIR, TEMPLATES_DIR, EXPORTS_DIR, BACKUPS_DIR]:
     directory.mkdir(parents=True, exist_ok=True)
 
 # Copy bundled assets from _MEIPASS if they exist

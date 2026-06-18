@@ -38,8 +38,6 @@ data/exports/
 
 # Görseller (yüklenmiş kullanıcı içerikleri)
 data/images/
-!data/images/logo.png
-!data/images/logo.ico
 
 # IDE
 .vscode/

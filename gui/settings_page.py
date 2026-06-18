@@ -246,7 +246,7 @@ class SettingsPage(ctk.CTkFrame):
 
         # Eylem butonları
         actions_frame = ctk.CTkFrame(card, fg_color='transparent')
-        actions_frame.grid(row=3, column=0, columnspan=2, pady=15, padx=15, sticky='ew')
+        actions_frame.grid(row=2, column=0, columnspan=2, pady=15, padx=15, sticky='ew')
 
         btn_backup = ctk.CTkButton(
             actions_frame,
@@ -266,33 +266,9 @@ class SettingsPage(ctk.CTkFrame):
         )
         btn_restore.pack(side='right', fill='x', expand=True, padx=(5, 0))
 
-        # Py Optik dizini
-        ctk.CTkLabel(
-            card, text='Py Optik Klasörü:', anchor='w'
-        ).grid(row=2, column=0, sticky='w', pady=10, padx=15)
-
-        optik_dir_frame = ctk.CTkFrame(card, fg_color='transparent')
-        optik_dir_frame.grid(row=2, column=1, sticky='ew', pady=10, padx=15)
-        optik_dir_frame.grid_columnconfigure(0, weight=1)
-
-        self.optik_dir_label = ctk.CTkLabel(
-            optik_dir_frame,
-            text=str(config.PY_OPTIK_DIR),
-            anchor='w',
-            text_color='gray'
-        )
-        self.optik_dir_label.grid(row=0, column=0, sticky='ew')
-
-        ctk.CTkButton(
-            optik_dir_frame,
-            text='📁 Seç',
-            command=self.select_optik_dir,
-            width=80
-        ).grid(row=0, column=1, padx=(5, 0))
-
         # Fabrika ayarları
         reset_frame = ctk.CTkFrame(card, fg_color='transparent')
-        reset_frame.grid(row=4, column=0, columnspan=2, pady=(0, 15), padx=15, sticky='ew')
+        reset_frame.grid(row=3, column=0, columnspan=2, pady=(0, 15), padx=15, sticky='ew')
 
         btn_reset = ctk.CTkButton(
             reset_frame,
@@ -316,16 +292,7 @@ class SettingsPage(ctk.CTkFrame):
             self.backup_dir_label.configure(text=str(config.BACKUPS_DIR))
             logger.info(f'Yeni yedekleme klasörü seçildi: {selected_dir}')
 
-    def select_optik_dir(self):
-        """Py Optik klasörü seç"""
-        selected_dir = filedialog.askdirectory(
-            title='Py Optik Klasörünü Seç',
-            initialdir=str(config.PY_OPTIK_DIR)
-        )
-        if selected_dir:
-            config.PY_OPTIK_DIR = Path(selected_dir)
-            self.optik_dir_label.configure(text=str(config.PY_OPTIK_DIR))
-            logger.info(f'Yeni Py Optik klasörü seçildi: {selected_dir}')
+
 
     def backup_now(self):
         """Veritabanını yedekle"""
@@ -462,10 +429,7 @@ class SettingsPage(ctk.CTkFrame):
         config.BACKUPS_DIR = Path(backup_dir)
         self.backup_dir_label.configure(text=str(config.BACKUPS_DIR))
 
-        # Optik dizini
-        optik_dir = db_manager.get_setting('py_optik_dir', str(config.PY_OPTIK_DIR))
-        config.PY_OPTIK_DIR = Path(optik_dir)
-        self.optik_dir_label.configure(text=str(config.PY_OPTIK_DIR))
+
 
     def save_settings(self):
         """Ayarları kaydet ve doğrula"""
@@ -528,8 +492,7 @@ class SettingsPage(ctk.CTkFrame):
                                    'Varsayılan ders sorumlusu')
             db_manager.set_setting('backup_dir', str(config.BACKUPS_DIR),
                                    'Veritabanı yedekleme klasörü')
-            db_manager.set_setting('py_optik_dir', str(config.PY_OPTIK_DIR),
-                                   'Py Optik klasör yolu')
+
 
             config.APP_AUTHOR = self.institution_entry.get().strip()
 

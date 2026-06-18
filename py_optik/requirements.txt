@@ -1,8 +1,0 @@
-PyQt6
-opencv-python-headless
-numpy
-pymupdf
-fpdf2
-matplotlib
-pandas
-openpyxl

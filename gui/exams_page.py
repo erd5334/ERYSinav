@@ -358,26 +358,6 @@ class ExamsPage(ctk.CTkFrame):
             command=self.open_key_file, state='disabled')
         self.btn_open_key.pack(fill='x', pady=3)
 
-        # Optik-Form entegrasyon
-        self.integ_frame = ctk.CTkFrame(self.details_sub_frame, fg_color='transparent')
-        self.integ_frame.grid(row=4, column=0, sticky='ew', padx=10, pady=10)
-
-        self.btn_send_optik = ctk.CTkButton(
-            self.integ_frame, text='📊 Py Optik\'e Gönder',
-            command=self.send_to_py_optik, state='disabled',
-            fg_color=config.COLORS.get('info', '#1565c0'),
-            hover_color='#0d47a1'
-        )
-        self.btn_send_optik.pack(fill='x', pady=3)
-
-        self.btn_import_results = ctk.CTkButton(
-            self.integ_frame, text='📥 Optik Sonuçları İçe Aktar',
-            command=self.import_optik_results, state='disabled',
-            fg_color=config.COLORS.get('success', '#2e7d32'),
-            hover_color='#1b5e20'
-        )
-        self.btn_import_results.pack(fill='x', pady=3)
-
     def load_data(self):
         """Dersleri ve geçmiş sınavları yükle"""
         try:
@@ -824,8 +804,6 @@ class ExamsPage(ctk.CTkFrame):
         self.lbl_date_duration.configure(text='Tarih/Süre: -')
         self.btn_open_word.configure(state='disabled')
         self.btn_open_key.configure(state='disabled')
-        self.btn_send_optik.configure(state='disabled')
-        self.btn_import_results.configure(state='disabled')
         self.selected_exam = None
 
     def show_exam_details(self, exam):
@@ -850,9 +828,6 @@ class ExamsPage(ctk.CTkFrame):
         else:
             self.btn_open_key.configure(state='disabled')
 
-        self.btn_send_optik.configure(state='normal')
-        self.btn_import_results.configure(state='normal')
-
     def open_word_file(self):
         """Word dosyasını aç"""
         if not self.selected_exam or not self.selected_exam.word_file:
@@ -872,100 +847,3 @@ class ExamsPage(ctk.CTkFrame):
             os.startfile(self.selected_exam.key_file)
         except Exception as e:
             messagebox.showerror('Hata', f'Dosya açılamadı:\n{e}')
-
-    def send_to_py_optik(self):
-        """Sınavı Py Optik programına gönder"""
-        if not self.selected_exam:
-            messagebox.showwarning('Uyarı', 'Lütfen bir sınav seçin!')
-            return
-
-        try:
-            optik_dir = Path(config.PY_OPTIK_DIR)
-            if not optik_dir.exists():
-                messagebox.showerror(
-                    'Hata',
-                    f'Py Optik klasörü bulunamadı:\n{optik_dir}\n\n'
-                    'Ayarlar > Py Optik Klasörü kısmından güncelleyin.'
-                )
-                return
-
-            # CSV dosyası hazırla
-            csv_data = self._prepare_optik_csv()
-            if not csv_data:
-                return
-
-            csv_file = optik_dir / f'{self.selected_exam.exam_name}_optik.csv'
-            csv_data.to_csv(str(csv_file), index=False, encoding='utf-8-sig')
-
-            messagebox.showinfo(
-                'Başarı',
-                f'Optik form verisi hazırlandı:\n{csv_file}\n\n'
-                'Py Optik programını açarak bu dosyayı kullanabilirsiniz.'
-            )
-
-            if self.status_callback:
-                self.status_callback('Py Optik\'e gönderildi')
-
-        except Exception as e:
-            logger.error(f'Py Optik gönderme hatası: {e}')
-            messagebox.showerror('Hata', f'Py Optik gönderimi başarısız:\n{e}')
-
-    def _prepare_optik_csv(self):
-        """Optik form için CSV verisi hazırla"""
-        if not self.selected_exam:
-            return None
-
-        try:
-            with db_manager.session_scope() as session:
-                exam_questions = session.query(ExamQuestion).filter_by(
-                    exam_id=self.selected_exam.id).order_by(ExamQuestion.order).all()
-                answers = []
-                for eq in exam_questions:
-                    q = session.query(Question).filter_by(id=eq.question_id).first()
-                    if q:
-                        answers.append({
-                            'soru_no': eq.order,
-                            'dogru_cevap': q.correct_answer
-                        })
-
-            return pd.DataFrame(answers)
-        except Exception as e:
-            logger.error(f'CSV hazırlama hatası: {e}')
-            return None
-
-    def import_optik_results(self):
-        """Optik sonuçlarını içe aktar"""
-        if not self.selected_exam:
-            messagebox.showwarning('Uyarı', 'Lütfen bir sınav seçin!')
-            return
-
-        filepath = filedialog.askopenfilename(
-            title='Optik Sonuç Dosyasını Seç',
-            filetypes=[
-                ('CSV dosyaları', '*.csv'),
-                ('Excel dosyaları', '*.xlsx'),
-                ('Tüm dosyalar', '*.*')
-            ]
-        )
-        if not filepath:
-            return
-
-        try:
-            if filepath.endswith('.csv'):
-                df = pd.read_csv(filepath)
-            else:
-                df = pd.read_excel(filepath)
-
-            messagebox.showinfo(
-                'Sonuçlar Yüklendi',
-                f'✅ {len(df)} öğrenci sonucu yüklendi.\n\n'
-                'İstatistikler sayfasından Sınav Başarı Analizi '
-                'sekmesini kullanarak sonuçları görüntüleyebilirsiniz.'
-            )
-
-            if self.status_callback:
-                self.status_callback(f'{len(df)} öğrenci sonucu yüklendi')
-
-        except Exception as e:
-            logger.error(f'Optik içe aktarma hatası: {e}')
-            messagebox.showerror('Hata', f'Sonuçlar yüklenemedi:\n{e}')
