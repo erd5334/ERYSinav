@@ -1,0 +1,60 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+*.pyd
+.Python
+*.egg
+*.egg-info/
+dist/
+build/
+eggs/
+parts/
+var/
+sdist/
+develop-eggs/
+.installed.cfg
+lib/
+lib64/
+
+# Sanal ortam
+.env
+.venv
+env/
+venv/
+ENV/
+
+# Veritabanı (kişisel veri içerebilir)
+data/exam_database.db
+data/backups/
+
+# Log dosyaları
+data/app.log
+*.log
+
+# Dışa aktarılan dosyalar
+data/exports/
+
+# Görseller (yüklenmiş kullanıcı içerikleri)
+data/images/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# PyInstaller
+*.spec
+dist/
+build/
+
+# Tesseract OCR
+tessdata/
