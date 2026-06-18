@@ -227,14 +227,12 @@ class MainWindow(ctk.CTk):
         self.status_label.configure(text=message)
 
     def on_closing(self):
-        if messagebox.askokcancel('Çıkış', 'Uygulamadan çıkmak istediğinize emin misiniz?'):
-            try:
-                if config.BACKUP_SETTINGS['backup_on_exit']:
-                    from database import db_manager
-                    db_manager.backup_database()
-                    logger.info('Çıkış öncesi yedekleme tamamlandı')
-            except Exception as e:
-                logger.error(f"Yedekleme hatası: {e}")
-                
-            logger.info('Uygulama kapatılıyor')
-            self.destroy()
+        try:
+            if config.BACKUP_SETTINGS['backup_on_exit']:
+                from database import db_manager
+                db_manager.backup_database()
+                logger.info('Çıkış öncesi yedekleme tamamlandı')
+        except Exception as e:
+            logger.error(f"Yedekleme hatası: {e}")
+        logger.info('Uygulama kapatılıyor')
+        self.destroy()

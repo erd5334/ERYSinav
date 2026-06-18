@@ -46,27 +46,37 @@ class BulkPreviewDialog(ctk.CTkToplevel):
         
         top_frame = ctk.CTkFrame(self, corner_radius=10)
         top_frame.grid(row=0, column=0, sticky='ew', padx=15, pady=(15, 10))
-        top_frame.grid_columnconfigure(1, weight=1)
+        top_frame.grid_columnconfigure(1, weight=2)
         top_frame.grid_columnconfigure(3, weight=1)
+        top_frame.grid_columnconfigure(5, weight=1)
         
+        # Row 0
         lbl_course = ctk.CTkLabel(top_frame, text='Aktarılacak Ders:*', font=config.FONTS['body'])
         lbl_course.grid(row=0, column=0, padx=(15, 5), pady=12, sticky='w')
         
         course_names = [f"{c.code} - {c.name}" for c in self.courses]
-        self.course_combo = ctk.CTkComboBox(top_frame, values=course_names, width=220)
+        self.course_combo = ctk.CTkComboBox(top_frame, values=course_names)
         self.course_combo.grid(row=0, column=1, padx=(5, 15), pady=12, sticky='ew')
         if course_names:
             self.course_combo.set(course_names[0])
         else:
             self.course_combo.configure(values=['Ders bulunamadı!'])
             
-        lbl_diff = ctk.CTkLabel(top_frame, text='Zorluk Seviyesi:', font=config.FONTS['body'])
-        lbl_diff.grid(row=0, column=2, padx=(15, 5), pady=12, sticky='w')
+        lbl_type = ctk.CTkLabel(top_frame, text='Soru Türü:', font=config.FONTS['body'])
+        lbl_type.grid(row=0, column=2, padx=(15, 5), pady=12, sticky='w')
         
-        self.difficulty_combo = ctk.CTkComboBox(top_frame, values=['Kolay', 'Orta', 'Zor'], width=120)
-        self.difficulty_combo.grid(row=0, column=3, padx=(5, 15), pady=12, sticky='w')
+        self.question_type_combo = ctk.CTkComboBox(top_frame, values=['Genel', 'Vize', 'Final'])
+        self.question_type_combo.grid(row=0, column=3, padx=(5, 15), pady=12, sticky='ew')
+        self.question_type_combo.set('Genel')
+            
+        lbl_diff = ctk.CTkLabel(top_frame, text='Zorluk Seviyesi:', font=config.FONTS['body'])
+        lbl_diff.grid(row=0, column=4, padx=(15, 5), pady=12, sticky='w')
+        
+        self.difficulty_combo = ctk.CTkComboBox(top_frame, values=['Kolay', 'Orta', 'Zor'])
+        self.difficulty_combo.grid(row=0, column=5, padx=(5, 15), pady=12, sticky='ew')
         self.difficulty_combo.set('Orta')
         
+        # Row 1
         lbl_topic = ctk.CTkLabel(top_frame, text='Konu:', font=config.FONTS['body'])
         lbl_topic.grid(row=1, column=0, padx=(15, 5), pady=(0, 12), sticky='w')
         
@@ -77,7 +87,7 @@ class BulkPreviewDialog(ctk.CTkToplevel):
         lbl_tags.grid(row=1, column=2, padx=(15, 5), pady=(0, 12), sticky='w')
         
         self.tags_entry = ctk.CTkEntry(top_frame, placeholder_text='Virgülle ayırın (Örn: vize, mat1)')
-        self.tags_entry.grid(row=1, column=3, padx=(5, 15), pady=(0, 12), sticky='ew')
+        self.tags_entry.grid(row=1, column=3, columnspan=3, padx=(5, 15), pady=(0, 12), sticky='ew')
         
         self.scroll_frame = ctk.CTkScrollableFrame(self, label_text='Ayrıştırılan Sorular (Düzenleyebilirsiniz)')
         self.scroll_frame.grid(row=1, column=0, sticky='nsew', padx=15, pady=5)
@@ -268,13 +278,14 @@ class BulkPreviewDialog(ctk.CTkToplevel):
             messagebox.showwarning('Uyarı', 'Lütfen içe aktarmak için en az bir soru seçin!')
             return
             
-        self.result = (
-            course,
-            selected_questions,
-            self.difficulty_combo.get(),
-            self.topic_entry.get().strip(),
-            self.tags_entry.get().strip()
-        )
+        self.result = {
+            'course': course,
+            'questions': selected_questions,
+            'difficulty': self.difficulty_combo.get(),
+            'topic': self.topic_entry.get().strip(),
+            'tags': self.tags_entry.get().strip(),
+            'question_type': self.question_type_combo.get()
+        }
         self.destroy()
 
     def on_cancel(self):

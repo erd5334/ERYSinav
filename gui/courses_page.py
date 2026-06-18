@@ -479,6 +479,9 @@ class CoursesPage(ctk.CTkFrame):
                     id=self.selected_course.id).first()
                 if course:
                     course.is_active = False  # Soft delete
+                    # İlişkili soruları da soft-delete yap
+                    for q in course.questions:
+                        q.is_active = False
                     msg = f"'{course.name}' dersi silindi"
 
             self.load_courses()

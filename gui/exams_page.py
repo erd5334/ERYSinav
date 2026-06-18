@@ -154,6 +154,7 @@ class ExamsPage(ctk.CTkFrame):
         # Seçenekler
         options_frame = ctk.CTkFrame(settings_frame)
         options_frame.grid(row=2, column=0, sticky='ew', padx=20, pady=(0, 20))
+        options_frame.grid_columnconfigure(1, weight=1)
 
         ctk.CTkLabel(
             options_frame, text='Seçenekler',
@@ -164,19 +165,24 @@ class ExamsPage(ctk.CTkFrame):
         ctk.CTkCheckBox(
             options_frame, text='Soruları karıştır',
             variable=self.shuffle_questions_var
-        ).grid(row=1, column=0, sticky='w', padx=10, pady=5)
+        ).grid(row=1, column=0, columnspan=2, sticky='w', padx=10, pady=5)
 
         self.shuffle_answers_var = ctk.BooleanVar(value=False)
         ctk.CTkCheckBox(
             options_frame, text='Şıkları karıştır',
             variable=self.shuffle_answers_var
-        ).grid(row=2, column=0, sticky='w', padx=10, pady=5)
+        ).grid(row=2, column=0, columnspan=2, sticky='w', padx=10, pady=5)
 
         self.create_answer_key_var = ctk.BooleanVar(value=True)
         ctk.CTkCheckBox(
             options_frame, text='Cevap anahtarı oluştur',
             variable=self.create_answer_key_var
-        ).grid(row=3, column=0, sticky='w', padx=10, pady=5)
+        ).grid(row=3, column=0, columnspan=2, sticky='w', padx=10, pady=5)
+
+        ctk.CTkLabel(options_frame, text='Yazı Tipi Boyutu:').grid(row=4, column=0, sticky='w', padx=10, pady=5)
+        self.font_size_combo = ctk.CTkComboBox(options_frame, values=['9', '10', '11', '12'], width=80)
+        self.font_size_combo.grid(row=4, column=1, sticky='w', padx=10, pady=5)
+        self.font_size_combo.set('11')
 
         # Zorluk dağılımı
         difficulty_frame = ctk.CTkFrame(settings_frame)
@@ -352,7 +358,7 @@ class ExamsPage(ctk.CTkFrame):
                 course_objs = session.query(Course).filter_by(
                     is_active=True).order_by(Course.code).all()
                 self.courses = [
-                    SimpleNamespace(id=c.id, code=c.code, name=c.name)
+                    SimpleNamespace(id=c.id, code=c.code, name=c.name, instructor=c.instructor)
                     for c in course_objs
                 ]
 
@@ -571,92 +577,109 @@ class ExamsPage(ctk.CTkFrame):
 
                 exam_id = exam.id
 
-                # Word üretimi için veri hazırla
+                # Word üretimi için veri hazırla — WordGenerator.create_exam formatı
                 question_data = []
                 for q in selected:
-                    options = {
-                        'A': q.option_a,
-                        'B': q.option_b,
-                        'C': q.option_c,
-                        'D': q.option_d,
+                    opt_details = {
+                        'A': {'text': q.option_a or '', 'image': getattr(q, 'option_a_image_path', None)},
+                        'B': {'text': q.option_b or '', 'image': getattr(q, 'option_b_image_path', None)},
+                        'C': {'text': q.option_c or '', 'image': getattr(q, 'option_c_image_path', None)},
+                        'D': {'text': q.option_d or '', 'image': getattr(q, 'option_d_image_path', None)},
                     }
-                    if q.option_e:
-                        options['E'] = q.option_e
+                    if q.option_e or getattr(q, 'option_e_image_path', None):
+                        opt_details['E'] = {'text': q.option_e or '', 'image': getattr(q, 'option_e_image_path', None)}
 
                     if shuffle_a:
-                        items = list(options.items())
+                        items = list(opt_details.items())
                         random.shuffle(items)
-                        old_correct = q.correct_answer.upper()
-                        old_vals = [options[k] for k in ['A', 'B', 'C', 'D', 'E']
-                                    if k in options]
-                        new_options = {chr(65 + i): v for i, (_, v) in enumerate(items)}
-                        # Doğru cevabı bul
-                        correct_val = options.get(old_correct, '')
+                        correct_val = opt_details.get(q.correct_answer.upper(), {'text': '', 'image': None})
+                        new_opt_details = {chr(65 + i): v for i, (_, v) in enumerate(items)}
                         new_correct = next(
-                            (k for k, v in new_options.items() if v == correct_val),
-                            old_correct
+                            (k for k, v in new_opt_details.items() if v == correct_val),
+                            q.correct_answer.upper()
                         )
-                        options = new_options
+                        opt_details = new_opt_details
                     else:
-                        new_correct = q.correct_answer.upper()
+                        new_correct = q.correct_answer.upper() if q.correct_answer else 'A'
 
                     question_data.append({
-                        'text': q.question_text,
-                        'options': options,
-                        'correct': new_correct,
-                        'image_path': q.image_path
+                        'question_text': q.question_text,
+                        'option_a': opt_details.get('A', {}).get('text', ''),
+                        'option_b': opt_details.get('B', {}).get('text', ''),
+                        'option_c': opt_details.get('C', {}).get('text', ''),
+                        'option_d': opt_details.get('D', {}).get('text', ''),
+                        'option_e': opt_details.get('E', {}).get('text', ''),
+                        'option_a_image_path': opt_details.get('A', {}).get('image'),
+                        'option_b_image_path': opt_details.get('B', {}).get('image'),
+                        'option_c_image_path': opt_details.get('C', {}).get('image'),
+                        'option_d_image_path': opt_details.get('D', {}).get('image'),
+                        'option_e_image_path': opt_details.get('E', {}).get('image'),
+                        'correct_answer': new_correct,
+                        'question_image_path': getattr(q, 'image_path', None),
                     })
 
-            # Word oluştur
-            output_dir = config.OUTPUT_DIR if hasattr(config, 'OUTPUT_DIR') else Path.home() / 'Documents'
-            output_dir = Path(output_dir)
+            # Word oluştur (her ders için ayrı klasör altında)
+            course_dir_name = f'{course.code} - {course.name}'
+            for char in ['<', '>', ':', '"', '/', '\\', '|', '?', '*']:
+                course_dir_name = course_dir_name.replace(char, '_')
+                
+            output_dir = Path(config.EXPORTS_DIR) / course_dir_name
             output_dir.mkdir(parents=True, exist_ok=True)
 
-            generator = WordGenerator()
             word_path = output_dir / f'{exam_name}.docx'
             key_path = output_dir / f'{exam_name}_cevap_anahtari.docx' if create_key else None
 
             institution = db_manager.get_setting('institution_name', config.APP_AUTHOR)
-            generator.generate_exam(
-                question_data,
-                output_path=str(word_path),
-                exam_info={
-                    'course_name': f'{course.code} - {course.name}',
-                    'exam_type': exam_type,
-                    'exam_group': exam_group,
-                    'exam_date': exam_date,
-                    'duration': duration,
-                    'institution': institution
-                },
-                create_key=create_key,
-                key_path=str(key_path) if key_path else None
-            )
+            exam_info = {
+                'course_name': course.name,
+                'exam_type': exam_type,
+                'exam_group': exam_group,
+                'exam_date': exam_date,
+                'duration': duration,
+                'question_count': len(question_data),
+                'institution': institution,
+                'instructor': getattr(course, 'instructor', '') or '',
+                'font_size': int(self.font_size_combo.get() or 11),
+            }
+
+            # WordGenerator.create_exam(exam_data, questions, output_path)
+            WordGenerator.create_exam(exam_info, question_data, str(word_path))
+
+            if create_key and key_path:
+                WordGenerator.create_answer_key(exam_info, question_data, str(key_path))
 
             # Dosya yollarını kaydet
             with db_manager.session_scope() as session:
-                exam = session.query(Exam).filter_by(id=exam_id).first()
-                if exam:
-                    exam.word_file = str(word_path)
+                saved_exam = session.query(Exam).filter_by(id=exam_id).first()
+                if saved_exam:
+                    saved_exam.word_file = str(word_path)
                     if key_path:
-                        exam.key_file = str(key_path)
+                        saved_exam.key_file = str(key_path)
 
             self.load_data()
 
             success_msg = (
-                f'✅ Sınav başarıyla oluşturuldu!\n\n'
-                f'📄 Word dosyası:\n{word_path}'
+                f'Sınav başarıyla oluşturuldu!\n\n'
+                f'Word dosyası:\n{word_path}'
             )
             if key_path:
-                success_msg += f'\n\n🔑 Cevap anahtarı:\n{key_path}'
+                success_msg += f'\n\nCevap anahtarı:\n{key_path}'
 
             messagebox.showinfo('Sınav Oluşturuldu', success_msg)
+
+            # Sınav oluşturulduktan sonra hedef klasörü aç
+            import os
+            try:
+                os.startfile(str(output_dir.resolve()))
+            except Exception as e:
+                logger.error(f'Klasör açma hatası: {e}')
 
             if self.status_callback:
                 self.status_callback(f'Sınav oluşturuldu: {exam_name}')
 
         except Exception as e:
-            logger.error(f'Sınav oluşturma hatası: {e}')
-            messagebox.showerror('Hata', f'Sınav oluşturulurken hata:\n{e}')
+            logger.error(f'Sinav olusturma hatasi: {e}', exc_info=True)
+            messagebox.showerror('Hata', f'Sinav olusturulurken hata:\n{e}')
 
     def select_questions(self):
         """Manuel soru seçimi (gelecek geliştirme için)"""

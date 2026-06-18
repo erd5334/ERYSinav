@@ -55,62 +55,100 @@ def parse_docx(file_path):
         logger.error(f"Word okuma hatası: {e}")
         raise e
 
+def _extract_tab_options(line):
+    """
+    Tab ile ayrılmış şık formatını ayrıştır.
+    Örnek: '\tA). A2\tB). 2A\tC). Hücre\tD). Fonksiyon\tE). Değer'
+    veya: '\tA) Seçenek\tB) Seçenek2...'
+    """
+    # A). / A) / A. formatlarını tab ile ayrılmış olarak yakala
+    parts = re.split(r'\t', line)
+    options = {}
+    for part in parts:
+        part = part.strip()
+        m = re.match(r'^([A-Ea-e])[\s\)\.\-]+\s*(.*)', part)
+        if m:
+            letter = m.group(1).lower()
+            content = m.group(2).strip()
+            if content:
+                options[letter] = content
+    return options
+
 def parse_questions_from_text(text):
     """
     Common parser that segments raw text into question objects using regex patterns.
+    Desteklenen formatlar:
+      - '1. Soru metni' veya '1) Soru metni'
+      - 'S1. Soru metni' veya 'S1) Soru metni'  (S öneki)
+      - Şıklar: 'A) ...' veya 'A). ...' veya tab ayrılmış '\tA). ...\tB). ...'
     """
-    lines = [line.strip() for line in text.split("\n")]
+    lines = [line for line in text.split("\n")]
     questions = []
     current_q = None
     
-    q_start_pat = re.compile(r'^(\d+)[\.\)]\s+(.*)$')
+    # Soru başlangıç patternleri: 1. / 1) / S1. / S1)
+    q_start_pat = re.compile(r'^(?:S|s)?(\d+)[\.\)]\s+(.+)$')
+    # Şık pattern: A) / A). / A- / A. 
     opt_pat = re.compile(r'^([A-Ea-e])[\s\)\.\-⪢]+\s*(.*)$')
+    # Satır içi çok şık (tab ayrılmış)
+    inline_opt_pat = re.compile(r'\t([A-Ea-e])[\)\.\-\s]+\s*')
     
     for line in lines:
-        if not line:
+        stripped = line.strip()
+        
+        if not stripped:
             continue
-            
-        if line.startswith("--- SAYFA") or line.strip() == "Diğer sayfaya geçiniz.":
+        if stripped.startswith("--- SAYFA") or stripped == "Diğer sayfaya geçiniz." or \
+           stripped.startswith("___") or stripped.startswith("---"):
             continue
-            
-        match_q = q_start_pat.match(line)
+        
+        # Tab ile ayrılmış satır ise şık mı diye kontrol et
+        if '\t' in line and current_q is not None:
+            tab_opts = _extract_tab_options(line)
+            if tab_opts:
+                for letter, content in tab_opts.items():
+                    current_q['options'][letter] = content
+                    current_q['current_opt'] = letter
+                continue
+        
+        # Soru başlangıcı
+        match_q = q_start_pat.match(stripped)
         if match_q:
             if current_q:
                 questions.append(current_q)
             q_num = match_q.group(1)
-            q_text = match_q.group(2)
+            q_text = match_q.group(2).strip()
             current_q = {
                 'number': q_num,
                 'text': q_text,
-                'options': {
-                    'a': '',
-                    'b': '',
-                    'c': '',
-                    'd': '',
-                    'e': ''
-                },
+                'options': {'a': '', 'b': '', 'c': '', 'd': '', 'e': ''},
                 'correct_answer': 'A',
                 'current_opt': None
             }
             continue
             
-        if not current_q:
+        if current_q is None:
             continue
+
+        # Satır içi birden fazla şık (tab yok ama regex ile)
+        inline_matches = list(re.finditer(r'\b([A-Ea-e])[\s\)\.\-⪢]+\s*', stripped))
+        if len(inline_matches) >= 2:
+            all_letters = {m.group(1).lower() for m in inline_matches}
+            if all_letters & {'a', 'b', 'c', 'd'}:
+                for i in range(len(inline_matches)):
+                    opt_letter = inline_matches[i].group(1).lower()
+                    if opt_letter not in ('a', 'b', 'c', 'd', 'e'):
+                        continue
+                    start_idx = inline_matches[i].end()
+                    end_idx = inline_matches[i + 1].start() if i + 1 < len(inline_matches) else len(stripped)
+                    content = stripped[start_idx:end_idx].strip()
+                    if content:
+                        current_q['options'][opt_letter] = content
+                        current_q['current_opt'] = opt_letter
+                continue
             
-        inline_matches = list(re.finditer(r'\b([A-Ea-e])[\s\)\.\-⪢]+\s*', line))
-        if len(inline_matches) >= 2 and any(m.group(1).lower() in ('a', 'b', 'c', 'd', 'e') for m in inline_matches):
-            for i in range(len(inline_matches)):
-                opt_letter = inline_matches[i].group(1).lower()
-                if opt_letter not in ('a', 'b', 'c', 'd', 'e'):
-                    continue
-                start_idx = inline_matches[i].end()
-                end_idx = inline_matches[i+1].start() if i + 1 < len(inline_matches) else len(line)
-                content = line[start_idx:end_idx].strip()
-                current_q['options'][opt_letter] = content
-                current_q['current_opt'] = opt_letter
-            continue
-            
-        match_opt = opt_pat.match(line)
+        # Tek şık
+        match_opt = opt_pat.match(stripped)
         if match_opt:
             opt_letter = match_opt.group(1).lower()
             content = match_opt.group(2).strip()
@@ -118,16 +156,18 @@ def parse_questions_from_text(text):
             current_q['current_opt'] = opt_letter
             continue
             
+        # Devam satırı
         if current_q['current_opt']:
-            if current_q['options'][current_q['current_opt']]:
-                current_q['options'][current_q['current_opt']] += ' ' + line
+            existing = current_q['options'].get(current_q['current_opt'], '')
+            if existing:
+                current_q['options'][current_q['current_opt']] += ' ' + stripped
             else:
-                current_q['options'][current_q['current_opt']] = line
+                current_q['options'][current_q['current_opt']] = stripped
         else:
             if current_q['text']:
-                current_q['text'] += '\n' + line
+                current_q['text'] += '\n' + stripped
             else:
-                current_q['text'] = line
+                current_q['text'] = stripped
                 
     if current_q:
         questions.append(current_q)

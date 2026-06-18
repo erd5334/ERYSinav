@@ -58,6 +58,12 @@ class DatabaseManager:
         migrations = [
             ("questions",     "question_type",  "TEXT NOT NULL DEFAULT 'Genel'"),
             ("questions",     "image_path",      "TEXT"),
+            ("questions",     "question_image_path", "TEXT"),
+            ("questions",     "option_a_image_path", "TEXT"),
+            ("questions",     "option_b_image_path", "TEXT"),
+            ("questions",     "option_c_image_path", "TEXT"),
+            ("questions",     "option_d_image_path", "TEXT"),
+            ("questions",     "option_e_image_path", "TEXT"),
             ("exams",         "exam_name",       "TEXT"),
             ("exams",         "duration",        "INTEGER DEFAULT 60"),
             ("exams",         "question_count",  "INTEGER DEFAULT 0"),

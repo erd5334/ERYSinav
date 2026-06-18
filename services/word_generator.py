@@ -15,13 +15,149 @@ class WordGenerator:
     """Word belgesi oluşturma sınıfı"""
 
     @staticmethod
+    def _update_embedded_excel(docx_path, exam_data):
+        import zipfile
+        import openpyxl
+        import io
+        from tempfile import NamedTemporaryFile
+        
+        sorumlu = exam_data.get('instructor', '')
+        ders_adi = exam_data.get('course_name', '')
+        tarih = exam_data.get('exam_date', '')
+        
+        # Geçici dosya oluştur
+        temp_file = NamedTemporaryFile(delete=False)
+        temp_path = temp_file.name
+        temp_file.close()
+        
+        try:
+            excel_path = 'word/embeddings/Microsoft_Excel_Worksheet.xlsx'
+            has_excel = False
+            
+            with zipfile.ZipFile(docx_path, 'r') as src_zip:
+                if excel_path in src_zip.namelist():
+                    has_excel = True
+                    
+            if not has_excel:
+                return
+                
+            with zipfile.ZipFile(docx_path, 'r') as src_zip:
+                with zipfile.ZipFile(temp_path, 'w', zipfile.ZIP_DEFLATED) as dest_zip:
+                    for item in src_zip.infolist():
+                        data = src_zip.read(item.filename)
+                        if item.filename == excel_path:
+                            try:
+                                wb = openpyxl.load_workbook(io.BytesIO(data))
+                                ws = wb.active
+                                ws['C1'] = sorumlu
+                                ws['C2'] = ders_adi
+                                if tarih:
+                                    ws['F1'] = f"Sınav Tarihi : {tarih}"
+                                out_io = io.BytesIO()
+                                wb.save(out_io)
+                                data = out_io.getvalue()
+                            except Exception as ex:
+                                logger.error(f"Embedded Excel güncelleme hatası: {ex}")
+                        dest_zip.writestr(item, data)
+            
+            # Değiştirilmiş belgeyi kopyala
+            import shutil
+            shutil.copy(temp_path, docx_path)
+            
+        except Exception as e:
+            logger.error(f"Embedded OLE güncelleme hatası: {e}")
+        finally:
+            try:
+                Path(temp_path).unlink()
+            except Exception:
+                pass
+
+    @staticmethod
+    def _replace_header_placeholders(doc, exam_data):
+        import re
+        sorumlu = exam_data.get('instructor', '')
+        ders_adi = exam_data.get('course_name', '')
+        tarih = exam_data.get('exam_date', '')
+        
+        def replace_in_p(p):
+            # Separate runs into drawing runs and non-drawing runs
+            drawing_runs = []
+            non_drawing_runs = []
+            
+            for r in p.runs:
+                # Check if run contains drawing elements
+                drawings = r.element.xpath('.//w:drawing')
+                if drawings:
+                    drawing_runs.append(r)
+                else:
+                    non_drawing_runs.append(r)
+                    
+            # If there are no text runs, nothing to do
+            if not non_drawing_runs:
+                return
+                
+            # Concatenate text from non-drawing runs
+            text = ''.join(r.text for r in non_drawing_runs)
+            if not text:
+                return
+            
+            orig_text = text
+            # Replace instructor
+            text = re.sub(
+                r'([{\[]+)\s*ders[\s_]*sorumlu(?:su)?\s*([}\]]+)',
+                lambda m: sorumlu,
+                text,
+                flags=re.IGNORECASE
+            )
+            # Replace course name
+            text = re.sub(
+                r'([{\[]+)\s*ders[\s_]*ad[iı]\s*([}\]]+)',
+                lambda m: ders_adi,
+                text,
+                flags=re.IGNORECASE
+            )
+            # Replace exam date
+            text = re.sub(
+                r'([{\[]+)\s*s[iı]nav[\s_]*tarih[iı]?\s*([}\]]+)',
+                lambda m: tarih,
+                text,
+                flags=re.IGNORECASE
+            )
+            
+            if text != orig_text:
+                # Put replaced text in the first non-drawing run
+                non_drawing_runs[0].text = text
+                # Clear text in all other non-drawing runs
+                for r in non_drawing_runs[1:]:
+                    r.text = ''
+
+        for section in doc.sections:
+            for h_type in ['header', 'first_page_header', 'even_page_header']:
+                h = getattr(section, h_type, None)
+                if not h:
+                    continue
+                    
+                # Paragraflarda değiştir
+                for p in h.paragraphs:
+                    replace_in_p(p)
+                                    
+                # Tablolarda değiştir
+                for table in h.tables:
+                    for row in table.rows:
+                        for cell in row.cells:
+                            for p in cell.paragraphs:
+                                replace_in_p(p)
+
+    @staticmethod
     def create_exam(exam_data, questions, output_path):
         try:
             import shutil
             taslak_path = config.BASE_DIR / 'taslak.docx'
             if taslak_path.exists():
                 shutil.copy(str(taslak_path), output_path)
+                WordGenerator._update_embedded_excel(output_path, exam_data)
                 doc = Document(output_path)
+                WordGenerator._replace_header_placeholders(doc, exam_data)
                 for _ in range(3):
                     doc.add_paragraph()
             else:
@@ -241,6 +377,7 @@ class WordGenerator:
 
     @staticmethod
     def _add_questions(doc, questions, exam_data):
+        font_size = exam_data.get('font_size', 11)
         for idx, question in enumerate(questions, 1):
             question_paragraphs = []
             p = doc.add_paragraph()
@@ -250,23 +387,45 @@ class WordGenerator:
             
             run = p.add_run(f"{idx}. ")
             run.font.bold = True
-            run.font.size = Pt(11)
+            run.font.size = Pt(font_size)
             
             run = p.add_run(question.get('question_text', ''))
             run.font.bold = True
-            run.font.size = Pt(11)
+            run.font.size = Pt(font_size)
             question_paragraphs.append(p)
             
             question_image = question.get('question_image_path')
             if question_image and Path(question_image).exists():
                 try:
+                    from database import db_manager
+                    layout_cols = int(db_manager.get_setting('layout_columns', 2))
+                except Exception:
+                    layout_cols = 2
+                    
+                try:
+                    from PIL import Image
+                    with Image.open(question_image) as img:
+                        img_width_px, _ = img.size
+                    
+                    dpi = 120
+                    img_width_in = img_width_px / dpi
+                    
+                    if layout_cols == 2:
+                        max_width = 3.2
+                    elif layout_cols >= 3:
+                        max_width = 2.1
+                    else:
+                        max_width = config.EXAM_SETTINGS['question_image_width'] / 100
+                        
+                    target_width = min(img_width_in, max_width)
+                    target_width = max(target_width, 1.0)
+                    
                     p_img = doc.add_paragraph()
                     p_img.paragraph_format.space_before = Pt(2)
                     p_img.paragraph_format.space_after = Pt(2)
                     p_img.paragraph_format.left_indent = Inches(0.4)
                     run_img = p_img.add_run()
-                    width_val = config.EXAM_SETTINGS['question_image_width'] / 100
-                    run_img.add_picture(question_image, width=Inches(width_val))
+                    run_img.add_picture(question_image, width=Inches(target_width))
                     question_paragraphs.append(p_img)
                 except Exception as e:
                     logger.warning(f"Soru resmi eklenemedi: {e}")
@@ -324,17 +483,39 @@ class WordGenerator:
                         p_opt.add_run('\t')
                     run_opt_char = p_opt.add_run(f"{opt['char']}) ")
                     run_opt_char.font.bold = True
-                    run_opt_char.font.size = Pt(11)
+                    run_opt_char.font.size = Pt(font_size)
                     
                     if opt['text']:
                         run_opt_text = p_opt.add_run(opt['text'])
-                        run_opt_text.font.size = Pt(11)
+                        run_opt_text.font.size = Pt(font_size)
                         
                     if opt['image'] and Path(opt['image']).exists():
                         try:
+                            from database import db_manager
+                            layout_cols = int(db_manager.get_setting('layout_columns', 2))
+                        except Exception:
+                            layout_cols = 2
+                            
+                        try:
+                            from PIL import Image
+                            with Image.open(opt['image']) as img:
+                                img_width_px, _ = img.size
+                            
+                            dpi = 120
+                            img_width_in = img_width_px / dpi
+                            
+                            if layout_cols == 2:
+                                max_width = 3.0
+                            elif layout_cols >= 3:
+                                max_width = 1.9
+                            else:
+                                max_width = config.EXAM_SETTINGS['answer_image_width'] / 100
+                                
+                            target_width = min(img_width_in, max_width)
+                            target_width = max(target_width, 0.8)
+                            
                             run_opt_img = p_opt.add_run()
-                            width_val = config.EXAM_SETTINGS['answer_image_width'] / 100
-                            run_opt_img.add_picture(opt['image'], width=Inches(width_val))
+                            run_opt_img.add_picture(opt['image'], width=Inches(target_width))
                         except Exception as e:
                             logger.warning(f"Şık resmi eklenemedi: {e}")
                 question_paragraphs.append(p_opt)

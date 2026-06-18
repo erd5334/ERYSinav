@@ -66,16 +66,23 @@ class QuestionsPage(ctk.CTkFrame):
         btn_frame.grid(row=0, column=1, sticky='e')
 
         self.btn_new = ctk.CTkButton(
-            btn_frame, text='➕ Yeni Soru', command=self.new_question, width=120)
+            btn_frame, text='+ Yeni Soru', command=self.new_question, width=120)
         self.btn_new.pack(side='left', padx=5)
 
         self.btn_refresh = ctk.CTkButton(
-            btn_frame, text='🔄 Yenile', command=self.load_data, width=100)
+            btn_frame, text='Yenile', command=self.load_data, width=90)
         self.btn_refresh.pack(side='left', padx=5)
 
+        self.btn_ocr = ctk.CTkButton(
+            btn_frame, text='Gorselden Soru Ekle',
+            command=self.ocr_from_image,
+            width=160,
+            fg_color='#e65100', hover_color='#bf360c')
+        self.btn_ocr.pack(side='left', padx=5)
+
         self.btn_import = ctk.CTkButton(
-            btn_frame, text='📥 Toplu Soru Ekle',
-            command=self.import_questions, width=140)
+            btn_frame, text='Toplu Soru Ekle',
+            command=self.import_questions, width=130)
         self.btn_import.pack(side='left', padx=5)
 
     def create_content(self):
@@ -283,207 +290,409 @@ class QuestionsPage(ctk.CTkFrame):
             fg_color='gray', hover_color='darkgray')
         self.btn_clear.pack(side='left', padx=5, fill='x', expand=True)
 
+    # ─────────────────────────────────────────────────────────────
+    # Gorsel yonetimi
+    # ─────────────────────────────────────────────────────────────
+
     def create_image_section(self):
-        """Görsel yükleme bölümü"""
-        img_frame = ctk.CTkFrame(self.detail_frame)
+        """Soru ve her sik icin ayri gorsel alani (Sec/Kirp/X butonlari)"""
+        img_frame = ctk.CTkScrollableFrame(self.detail_frame, height=300)
         img_frame.grid(row=2, column=0, sticky='ew', padx=15, pady=10)
-        img_frame.grid_columnconfigure(0, weight=1)
+        img_frame.grid_columnconfigure(1, weight=1)
 
         ctk.CTkLabel(
-            img_frame, text='🖼️ Görsel Yönetimi',
+            img_frame, text='Gorsel Yonetimi',
             font=config.FONTS.get('subheading', ('Segoe UI', 12, 'bold'))
-        ).grid(row=0, column=0, pady=10, padx=10, sticky='w')
+        ).grid(row=0, column=0, columnspan=4, pady=(8, 4), padx=10, sticky='w')
 
-        # Soru görseli
-        ctk.CTkLabel(img_frame, text='Soru görseli:', anchor='w').grid(
-            row=1, column=0, sticky='w', padx=10)
-        self.btn_import_from_image = ctk.CTkButton(
-            img_frame, text='📸 Görsel Seç / OCR',
-            command=self.select_image, width=160)
-        self.btn_import_from_image.grid(row=1, column=1, padx=10, pady=5)
+        # (etiket, image_paths anahtarı) çiftleri
+        image_rows = [
+            ('Soru Resmi:', 'question'),
+            ('Sik A Resmi:', 'option_a'),
+            ('Sik B Resmi:', 'option_b'),
+            ('Sik C Resmi:', 'option_c'),
+            ('Sik D Resmi:', 'option_d'),
+            ('Sik E Resmi:', 'option_e'),
+        ]
+        self._img_labels = {}  # key -> CTkLabel
 
-        self.image_label_lbl = ctk.CTkLabel(
-            img_frame, text='Görsel seçilmedi', text_color='gray', anchor='w')
-        self.image_label_lbl = ctk.CTkLabel(
-            img_frame, text='Görsel seçilmedi', text_color='gray')
-        self.image_label_lbl.grid(row=2, column=0, columnspan=2, padx=10, sticky='w')
+        for row_idx, (label_text, key) in enumerate(image_rows, start=1):
+            ctk.CTkLabel(img_frame, text=label_text, anchor='w', width=100).grid(
+                row=row_idx, column=0, sticky='w', padx=(10, 5), pady=4)
+
+            lbl = ctk.CTkLabel(img_frame, text='Resim secilmedi',
+                               text_color='gray', anchor='w')
+            lbl.grid(row=row_idx, column=1, sticky='ew', padx=5, pady=4)
+            self._img_labels[key] = lbl
+
+            # Sec butonu
+            ctk.CTkButton(
+                img_frame, text='Sec', width=50,
+                command=lambda k=key: self._pick_image(k)
+            ).grid(row=row_idx, column=2, padx=3, pady=4)
+
+            # Kirp butonu
+            ctk.CTkButton(
+                img_frame, text='Kirp', width=50,
+                command=lambda k=key: self._crop_image(k)
+            ).grid(row=row_idx, column=3, padx=3, pady=4)
+
+            # Sil butonu
+            ctk.CTkButton(
+                img_frame, text='X', width=30,
+                fg_color='#c62828', hover_color='#b71c1c',
+                command=lambda k=key: self._remove_image(k)
+            ).grid(row=row_idx, column=4, padx=(3, 10), pady=4)
+
+    def _pick_image(self, key: str):
+        """Verilen key icin dosya secici ac"""
+        filepath = filedialog.askopenfilename(
+            title=f'{key} icin gorsel sec',
+            filetypes=[('Resim dosyalari', '*.png *.jpg *.jpeg *.bmp *.tiff *.webp'),
+                       ('Tum dosyalar', '*.*')]
+        )
+        if not filepath:
+            return
+        self.image_paths[key] = filepath
+        self._update_img_label(key)
+
+    def _crop_image(self, key: str):
+        """Verilen key icin kirpma dialogu ac"""
+        path = self.image_paths.get(key)
+        if not path:
+            messagebox.showwarning('Uyari', 'Once bir gorsel secin!')
+            return
+        try:
+            from gui.crop_dialog import CropDialog
+            dialog = CropDialog(self, path)
+            dialog.wait_window()
+            # CropDialog sonucu dondururse guncelle
+            if hasattr(dialog, 'result_path') and dialog.result_path:
+                self.image_paths[key] = dialog.result_path
+                self._update_img_label(key)
+        except Exception as e:
+            logger.error(f'Kirpma hatasi: {e}')
+            messagebox.showerror('Hata', f'Kirpma islemi basarisiz:\n{e}')
+
+    def _remove_image(self, key: str):
+        """Verilen key'in gorselini kaldir"""
+        self.image_paths[key] = None
+        self._update_img_label(key)
+
+    def _update_img_label(self, key: str):
+        """Tek bir gorsel etiketini guncelle"""
+        lbl = self._img_labels.get(key)
+        if not lbl:
+            return
+        path = self.image_paths.get(key)
+        if path:
+            lbl.configure(text=Path(path).name, text_color='#4caf50')
+        else:
+            lbl.configure(text='Resim secilmedi', text_color='gray')
+
+    def clear_image(self):
+        """Tum gorselleri temizle"""
+        self.image_paths = {k: None for k in self.image_paths}
+        for key in self._img_labels:
+            self._update_img_label(key)
+
+    # Geriye donuk uyumluluk icin
+    def update_image_label(self):
+        for key in self._img_labels:
+            self._update_img_label(key)
 
     def select_image(self):
-        """Görsel seç ve OCR ile içe aktar"""
+        """Sadece soru gorseli sec (geriye donuk uyumluluk)"""
+        self._pick_image('question')
+
+    # ─────────────────────────────────────────────────────────────
+    # OCR
+    # ─────────────────────────────────────────────────────────────
+
+    def ocr_from_image(self):
+        """Bir gorsel secip Windows OCR ile soru metnini ve siklari otomatik doldur"""
         filepath = filedialog.askopenfilename(
-            title='Soru Görseli Seç',
-            filetypes=[('Resim dosyaları', '*.png *.jpg *.jpeg *.bmp *.gif *.tiff')]
+            title='OCR icin gorsel sec',
+            filetypes=[('Resim dosyalari', '*.png *.jpg *.jpeg *.bmp *.tiff *.webp'),
+                       ('Tum dosyalar', '*.*')]
         )
         if not filepath:
             return
 
+        # Soru gorselini kaydet
         self.image_paths['question'] = filepath
-        self.update_image_label()
+        self._update_img_label('question')
 
-        # OCR ile metni çıkar
         try:
-            ocr = OCRHelper()
-            extracted = ocr.extract_question_and_options(filepath)
-            if extracted:
-                self.import_question_from_image(extracted)
-        except Exception as e:
-            logger.warning(f'OCR başarısız: {e}')
+            raw_text = OCRHelper.get_text_from_image(filepath)
+            if not raw_text:
+                messagebox.showwarning(
+                    'OCR', 'Gorseldan metin alinamadi.\n'
+                           'Gorselin net ve metin icermesini saglayin.')
+                return
 
-    def crop_image(self):
-        """Görsel kırpma dialogu"""
-        if not self.image_paths.get('question'):
-            messagebox.showwarning('Uyarı', 'Önce bir görsel seçin!')
-            return
-        try:
-            dialog = CropDialog(self, self.image_paths['question'])
-            dialog.wait_window()
+            # Soru ve siklari ayir
+            options, question = self.split_question_and_options(raw_text)
+
+            if question:
+                self.question_text.delete('1.0', 'end')
+                self.question_text.insert('1.0', question)
+
+            for opt_key, text in options.items():
+                if opt_key in self.option_entries:
+                    self.option_entries[opt_key].delete(0, 'end')
+                    self.option_entries[opt_key].insert(0, text)
+
+            messagebox.showinfo(
+                'OCR Tamamlandi',
+                f'Metin basariyla aktarildi.\n'
+                f'Soru: {question[:60]}...\n'
+                f'Bulunan sik sayisi: {len(options)}\n\n'
+                f'Lutfen bilgileri kontrol edip kaydedin.'
+            )
         except Exception as e:
-            logger.error(f'Kırpma hatası: {e}')
+            logger.error(f'OCR hatasi: {e}')
+            messagebox.showerror('Hata', f'OCR islemi basarisiz:\n{e}')
 
     def import_question_from_image(self, extracted_data):
-        """OCR ile çıkarılan veriyi forma doldur"""
+        """OCR ile cikarilan veriyi forma doldur"""
         if not extracted_data:
             return
-
         if 'question' in extracted_data and extracted_data['question']:
             self.question_text.delete('1.0', 'end')
             self.question_text.insert('1.0', extracted_data['question'])
-
-        option_keys = ['option_a', 'option_b', 'option_c', 'option_d', 'option_e']
-        option_names = ['A', 'B', 'C', 'D', 'E']
-        for key, name in zip(option_keys, option_names):
-            text_key = f'option_{name.lower()}'
-            if text_key in extracted_data and extracted_data[text_key]:
+        for name in ['a', 'b', 'c', 'd', 'e']:
+            key = f'option_{name}'
+            if key in extracted_data and extracted_data[key]:
                 if key in self.option_entries:
                     self.option_entries[key].delete(0, 'end')
-                    self.option_entries[key].insert(0, extracted_data[text_key])
+                    self.option_entries[key].insert(0, extracted_data[key])
 
     def split_question_and_options(self, text):
-        """Metin içinden soru ve şıkları ayır"""
+        """Metin icinden soru ve siklari ayir"""
         if not text:
             return {}, text
-
         options = {}
         lines = text.split('\n')
         question_lines = []
         option_pattern = re.compile(r'^([A-Ea-e])[.)]\s*(.*)')
-
         for line in lines:
             match = option_pattern.match(line.strip())
             if match:
                 letter = match.group(1).upper()
-                content = match.group(2).strip()
-                options[f'option_{letter.lower()}'] = content
+                options[f'option_{letter.lower()}'] = match.group(2).strip()
             else:
                 question_lines.append(line)
+        return options, '\n'.join(question_lines).strip()
 
-        question = '\n'.join(question_lines).strip()
-        return options, question
-
-    def clear_image(self):
-        """Görseli temizle"""
-        self.image_paths = {k: None for k in self.image_paths}
-        self.update_image_label()
-
-    def update_image_label(self):
-        """Görsel durumunu güncelle"""
-        if self.image_paths.get('question'):
-            filename = Path(self.image_paths['question']).name
-            self.image_label_lbl.configure(
-                text=f'✅ {filename}', text_color='#4caf50')
-        else:
-            self.image_label_lbl.configure(
-                text='Görsel seçilmedi', text_color='gray')
+    # ─────────────────────────────────────────────────────────────
+    # Toplu soru import (Excel / CSV / Word / PDF)
+    # ─────────────────────────────────────────────────────────────
 
     def import_questions(self):
-        """Excel/CSV'den toplu soru içe aktar"""
+        """Excel/CSV/Word/PDF dosyalarindan toplu soru ice aktar"""
         filepath = filedialog.askopenfilename(
-            title='Soru Dosyası Seç',
+            title='Soru Dosyasi Sec',
             filetypes=[
-                ('Excel dosyaları', '*.xlsx *.xls'),
-                ('CSV dosyaları', '*.csv'),
-                ('Tüm dosyalar', '*.*')
+                ('Desteklenen dosyalar',
+                 '*.xlsx *.xls *.csv *.docx *.doc *.pdf'),
+                ('Excel dosyalari', '*.xlsx *.xls'),
+                ('CSV dosyalari', '*.csv'),
+                ('Word dosyalari', '*.docx *.doc'),
+                ('PDF dosyalari', '*.pdf'),
+                ('Tum dosyalar', '*.*')
             ]
         )
         if not filepath:
             return
 
+        ext = Path(filepath).suffix.lower()
         try:
-            if filepath.endswith('.csv'):
-                df = pd.read_csv(filepath, encoding='utf-8')
+            if ext in ('.docx', '.doc'):
+                self._import_from_word(filepath)
+            elif ext == '.pdf':
+                self._import_from_pdf(filepath)
             else:
-                df = pd.read_excel(filepath)
-
-            required_cols = ['question', 'option_a', 'option_b', 'option_c',
-                             'option_d', 'correct_answer']
-            missing = [c for c in required_cols if c not in df.columns]
-            if missing:
-                messagebox.showerror(
-                    'Hata',
-                    f'Dosyada eksik sütunlar:\n{", ".join(missing)}\n\n'
-                    f'Gerekli sütunlar: {", ".join(required_cols)}'
-                )
-                return
-
-            added = 0
-            skipped = 0
-            errors = []
-
-            with db_manager.session_scope() as session:
-                # İlk ders
-                default_course = session.query(Course).filter_by(
-                    is_active=True).first()
-                if not default_course:
-                    messagebox.showwarning('Uyarı', 'Önce en az bir ders ekleyin!')
-                    return
-
-                for idx, row in df.iterrows():
-                    try:
-                        # Ders kodu varsa bul
-                        course = default_course
-                        if 'course_code' in df.columns and pd.notna(row['course_code']):
-                            found = session.query(Course).filter_by(
-                                code=str(row['course_code'])).first()
-                            if found:
-                                course = found
-
-                        question = Question(
-                            course_id=course.id,
-                            question_text=str(row['question']),
-                            option_a=str(row['option_a']),
-                            option_b=str(row['option_b']),
-                            option_c=str(row['option_c']),
-                            option_d=str(row['option_d']),
-                            option_e=str(row.get('option_e', '')) if pd.notna(
-                                row.get('option_e', '')) else '',
-                            correct_answer=str(row['correct_answer']).upper(),
-                            difficulty=str(row.get('difficulty', 'medium')).lower(),
-                            topic=str(row.get('topic', '')) if pd.notna(
-                                row.get('topic', '')) else '',
-                            tags=str(row.get('tags', '')) if pd.notna(
-                                row.get('tags', '')) else '',
-                            is_active=True
-                        )
-                        session.add(question)
-                        added += 1
-                    except Exception as e:
-                        errors.append(f'Satır {idx + 2}: {str(e)[:80]}')
-                        skipped += 1
-
-            self.load_data()
-            msg = f'✅ {added} soru eklendi.'
-            if skipped:
-                msg += f'\n⚠️ {skipped} soru atlandı.'
-            if errors:
-                msg += f'\n\nHatalar:\n' + '\n'.join(errors[:5])
-            messagebox.showinfo('İçe Aktarma Sonucu', msg)
-
-            if self.status_callback:
-                self.status_callback(f'{added} soru içe aktarıldı')
-
+                self._import_from_excel_csv(filepath)
         except Exception as e:
-            logger.error(f'Toplu içe aktarma hatası: {e}')
-            messagebox.showerror('Hata', f'Dosya okuma hatası:\n{e}')
+            logger.error(f'Toplu ice aktarma hatasi: {e}')
+            messagebox.showerror('Hata', f'Dosya okuma hatasi:\n{e}')
+
+    def _ask_import_target(self, default_q_type='Genel'):
+        """
+        Hangi derse ve hangi soru turune eklenecegini soran mini dialog.
+        (course_id, question_type) tuple dondurur; iptal edilirse (None, None).
+        """
+        if not self.courses:
+            messagebox.showwarning('Uyari', 'Once en az bir ders ekleyin!')
+            return None, None
+
+        win = ctk.CTkToplevel(self)
+        win.title('Toplu Ekleme Ayarlari')
+        win.geometry('380x220')
+        win.grab_set()
+        win.resizable(False, False)
+
+        result = {'course_id': None, 'q_type': default_q_type, 'ok': False}
+
+        ctk.CTkLabel(win, text='Ders secin:').pack(pady=(18, 4))
+        course_vals = [f'{c.code} - {c.name}' for c in self.courses]
+        course_combo = ctk.CTkComboBox(win, values=course_vals, width=300)
+        course_combo.pack()
+        course_combo.set(course_vals[0])
+
+        ctk.CTkLabel(win, text='Soru Turu:').pack(pady=(12, 4))
+        type_combo = ctk.CTkComboBox(win, values=['Genel', 'Vize', 'Final'], width=300)
+        type_combo.pack()
+        type_combo.set(default_q_type)
+
+        def on_ok():
+            sel = course_combo.get()
+            code = sel.split(' - ')[0]
+            course = next((c for c in self.courses if c.code == code), None)
+            result['course_id'] = course.id if course else self.courses[0].id
+            result['q_type'] = type_combo.get()
+            result['ok'] = True
+            win.destroy()
+
+        def on_cancel():
+            win.destroy()
+
+        btn_row = ctk.CTkFrame(win, fg_color='transparent')
+        btn_row.pack(pady=14)
+        ctk.CTkButton(btn_row, text='Tamam', command=on_ok, width=120).pack(
+            side='left', padx=8)
+        ctk.CTkButton(btn_row, text='Iptal', command=on_cancel,
+                      fg_color='gray', width=90).pack(side='left', padx=8)
+
+        win.wait_window()
+        if not result['ok']:
+            return None, None
+        return result['course_id'], result['q_type']
+
+    def _import_from_word(self, filepath):
+        """Word dosyasindan sorulari ice aktar"""
+        from utils.document_parser import parse_docx
+        questions = parse_docx(filepath)
+        if not questions:
+            messagebox.showwarning('Uyari', 'Dosyada parslanabilir soru bulunamadi.')
+            return
+        self._bulk_save_parsed(questions, filepath)
+
+    def _import_from_pdf(self, filepath):
+        """PDF dosyasindan sorulari ice aktar"""
+        from utils.document_parser import parse_pdf
+        questions = parse_pdf(filepath)
+        if not questions:
+            messagebox.showwarning('Uyari', 'PDF\'den parslanabilir soru bulunamadi.')
+            return
+        self._bulk_save_parsed(questions, filepath)
+
+    def _show_preview_and_save(self, parsed_questions, source_path):
+        """Toplu soru önizleme penceresini açar ve onaylanırsa veritabanına kaydeder"""
+        from gui.bulk_preview_dialog import BulkPreviewDialog
+
+        dialog = BulkPreviewDialog(self, parsed_questions, self.courses)
+        if dialog.result is None:
+            return
+
+        res = dialog.result
+        course = res['course']
+        selected_questions = res['questions']
+        difficulty_text = res['difficulty']
+        topic = res['topic']
+        tags = res['tags']
+        question_type = res['question_type']
+
+        diff_map = {'Kolay': 'easy', 'Orta': 'medium', 'Zor': 'hard'}
+        difficulty = diff_map.get(difficulty_text, 'medium')
+
+        total = len(selected_questions)
+        added = 0
+        skipped = 0
+
+        with db_manager.session_scope() as session:
+            for q in selected_questions:
+                opts = q.get('options', {})
+                q_text = q.get('text', '').strip()
+                if not q_text:
+                    skipped += 1
+                    continue
+                try:
+                    question = Question(
+                        course_id=course.id,
+                        question_text=q_text,
+                        option_a=opts.get('a', ''),
+                        option_b=opts.get('b', ''),
+                        option_c=opts.get('c', ''),
+                        option_d=opts.get('d', ''),
+                        option_e=opts.get('e', ''),
+                        correct_answer=q.get('correct_answer', 'A').upper(),
+                        difficulty=difficulty,
+                        question_type=question_type,
+                        topic=topic or None,
+                        tags=tags or None,
+                        is_active=True,
+                    )
+                    session.add(question)
+                    added += 1
+                except Exception as e:
+                    skipped += 1
+                    logger.warning(f'Soru kaydedilemedi: {e}')
+
+        self.load_data()
+        messagebox.showinfo(
+            'İçe Aktarma Sonucu',
+            f'Dosya: {Path(source_path).name}\n'
+            f'Seçilen soru: {total}\n'
+            f'Eklenen: {added}\n'
+            f'Atlanan: {skipped}'
+        )
+        if self.status_callback:
+            self.status_callback(f'{added} soru içe aktarıldı')
+
+    def _bulk_save_parsed(self, parsed_questions, source_path):
+        """parse_docx/parse_pdf ciktisini veritabanina kaydet"""
+        self._show_preview_and_save(parsed_questions, source_path)
+
+    def _import_from_excel_csv(self, filepath):
+        """Excel / CSV'den toplu soru ice aktar"""
+        if filepath.endswith('.csv'):
+            df = pd.read_csv(filepath, encoding='utf-8')
+        else:
+            df = pd.read_excel(filepath)
+
+        required_cols = ['question', 'option_a', 'option_b', 'option_c',
+                         'option_d', 'correct_answer']
+        missing = [c for c in required_cols if c not in df.columns]
+        if missing:
+            messagebox.showerror(
+                'Hata',
+                f'Dosyada eksik sutunlar:\n{", ".join(missing)}\n\n'
+                f'Gerekli sutunlar: {", ".join(required_cols)}'
+            )
+            return
+
+        parsed_questions = []
+        for idx, row in df.iterrows():
+            opt_e = ''
+            if 'option_e' in df.columns and pd.notna(row.get('option_e')):
+                opt_e = str(row['option_e']).strip()
+
+            parsed_questions.append({
+                'number': str(idx + 1),
+                'text': str(row.get('question', '')).strip(),
+                'options': {
+                    'a': str(row.get('option_a', '')).strip(),
+                    'b': str(row.get('option_b', '')).strip(),
+                    'c': str(row.get('option_c', '')).strip() if pd.notna(row.get('option_c')) else '',
+                    'd': str(row.get('option_d', '')).strip() if pd.notna(row.get('option_d')) else '',
+                    'e': opt_e,
+                },
+                'correct_answer': str(row.get('correct_answer', 'A')).strip().upper()
+            })
+
+        self._show_preview_and_save(parsed_questions, filepath)
 
     def load_data(self):
         """Dersleri ve soruları yükle"""
@@ -675,10 +884,12 @@ class QuestionsPage(ctk.CTkFrame):
         self.tags_entry.insert(0, question.tags or '')
 
         # Görsel
-        if question.image_path:
-            self.image_paths['question'] = question.image_path
-        else:
-            self.image_paths['question'] = None
+        self.image_paths['question'] = question.image_path or None
+        self.image_paths['option_a'] = question.option_a_image_path or None
+        self.image_paths['option_b'] = question.option_b_image_path or None
+        self.image_paths['option_c'] = question.option_c_image_path or None
+        self.image_paths['option_d'] = question.option_d_image_path or None
+        self.image_paths['option_e'] = question.option_e_image_path or None
         self.update_image_label()
 
     def save_question(self):
@@ -696,15 +907,18 @@ class QuestionsPage(ctk.CTkFrame):
             return
 
         question_text = self.question_text.get('1.0', 'end').strip()
-        if not question_text:
-            messagebox.showwarning('Uyarı', 'Soru metni boş olamaz!')
+        has_q_image = bool(self.image_paths.get('question'))
+        if not question_text and not has_q_image:
+            messagebox.showwarning('Uyarı', 'Soru metni veya soru görseli zorunludur!')
             return
 
         option_a = self.option_entries['option_a'].get().strip()
         option_b = self.option_entries['option_b'].get().strip()
+        has_a_image = bool(self.image_paths.get('option_a'))
+        has_b_image = bool(self.image_paths.get('option_b'))
 
-        if not option_a or not option_b:
-            messagebox.showwarning('Uyarı', 'En az A ve B şıkları zorunludur!')
+        if (not option_a and not has_a_image) or (not option_b and not has_b_image):
+            messagebox.showwarning('Uyarı', 'En az A ve B şıkları (metin veya görsel olarak) zorunludur!')
             return
 
         try:
@@ -732,8 +946,46 @@ class QuestionsPage(ctk.CTkFrame):
                 q.question_type = self.question_type_combo.get() or 'Genel'
                 q.topic = self.topic_entry.get().strip()
                 q.tags = self.tags_entry.get().strip()
-                q.image_path = self.image_paths.get('question')
                 q.is_active = True
+
+                # ID atanması için flush et
+                session.flush()
+
+                # Görselleri kaydet / kopyala
+                for key in ['question', 'option_a', 'option_b', 'option_c', 'option_d', 'option_e']:
+                    img_path = self.image_paths.get(key)
+                    db_attr = 'image_path' if key == 'question' else f"{key}_image_path"
+                    old_path = getattr(q, db_attr, None)
+
+                    if img_path:
+                        img_path_resolved = str(Path(img_path).resolve())
+                        old_path_resolved = str(Path(old_path).resolve()) if old_path else None
+
+                        if img_path_resolved != old_path_resolved:
+                            if not img_path_resolved.startswith(str(config.IMAGES_DIR.resolve())):
+                                try:
+                                    saved_path = ImageHandler.save_image(
+                                        source_path=img_path,
+                                        course_code=course.code,
+                                        question_number=str(q.id),
+                                        image_type=key
+                                    )
+                                    setattr(q, db_attr, saved_path)
+                                    self.image_paths[key] = saved_path
+                                except Exception as e:
+                                    logger.error(f"Görsel kaydetme hatası ({key}): {e}")
+                            else:
+                                setattr(q, db_attr, img_path)
+                    else:
+                        if old_path:
+                            try:
+                                ImageHandler.delete_image(old_path)
+                            except Exception as e:
+                                logger.warning(f"Eski görsel silinemedi: {e}")
+                        setattr(q, db_attr, None)
+
+                # question_image_path'i de eşitleyelim
+                q.question_image_path = q.image_path
 
             self.load_data()
             self.clear_form()
