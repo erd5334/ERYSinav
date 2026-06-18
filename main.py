@@ -19,6 +19,22 @@ def setup_logging():
     )
 
 def main():
+    # Optik Okuyucu alt süreci kontrolü
+    if len(sys.argv) > 1 and sys.argv[1] == '--optik':
+        try:
+            py_optik_path = Path(__file__).parent / 'py_optik'
+            sys.path.insert(0, str(py_optik_path))
+            
+            from py_optik.main import OptikApp
+            app = OptikApp()
+            app.run()
+            sys.exit(0)
+        except Exception as e:
+            print(f"Optik Okuyucu baslatilamadi: {e}", file=sys.stderr)
+            import traceback
+            traceback.print_exc()
+            sys.exit(1)
+
     try:
         setup_logging()
         logger = logging.getLogger(__name__)

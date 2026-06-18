@@ -46,7 +46,7 @@ class MainWindow(ctk.CTk):
     def create_sidebar(self):
         self.sidebar = ctk.CTkFrame(self, width=200, corner_radius=0)
         self.sidebar.grid(row=0, column=0, sticky='nswe', padx=0, pady=0)
-        self.sidebar.grid_rowconfigure(8, weight=1)
+        self.sidebar.grid_rowconfigure(9, weight=1)
         
         try:
             from PIL import Image
@@ -91,8 +91,13 @@ class MainWindow(ctk.CTk):
         )
         self.btn_settings.grid(row=7, column=0, padx=20, pady=5, sticky='ew')
         
+        self.btn_optik = ctk.CTkButton(
+            self.sidebar, text='📷 Optik Okuyucu', command=self.run_optik_reader, anchor='w', height=40
+        )
+        self.btn_optik.grid(row=8, column=0, padx=20, pady=5, sticky='ew')
+        
         brand_frame = ctk.CTkFrame(self.sidebar, fg_color=('#1a2a4a', '#0f1e35'), corner_radius=10)
-        brand_frame.grid(row=9, column=0, padx=12, pady=(15, 12), sticky='ew')
+        brand_frame.grid(row=10, column=0, padx=12, pady=(15, 12), sticky='ew')
         brand_frame.grid_columnconfigure(0, weight=1)
         
         brand_label = ctk.CTkLabel(
@@ -225,6 +230,37 @@ class MainWindow(ctk.CTk):
 
     def update_status(self, message):
         self.status_label.configure(text=message)
+
+    def run_optik_reader(self):
+        """Optik Okuyucu uygulamasını bağımsız bir süreç olarak başlatır"""
+        import subprocess
+        import sys
+        import config
+        from tkinter import messagebox
+        
+        try:
+            # py_optik klasörünün varlığını doğrula
+            if not config.PY_OPTIK_DIR.exists():
+                config.PY_OPTIK_DIR.mkdir(parents=True, exist_ok=True)
+                
+            if getattr(sys, 'frozen', False):
+                # Derlenmiş modda kendi EXE'mizi --optik parametresi ile çalıştırıyoruz
+                cmd = [sys.executable, '--optik']
+            else:
+                # Geliştirme modunda python ile py_optik/main.py dosyasını çalıştırıyoruz
+                main_py_path = config.PY_OPTIK_DIR / 'main.py'
+                if not main_py_path.exists():
+                    messagebox.showerror("Hata", f"Optik Okuyucu ana dosyası bulunamadı:\n{main_py_path}")
+                    return
+                cmd = [sys.executable, 'main.py']
+                
+            logger.info(f"Optik Okuyucu başlatılıyor: {cmd} (CWD: {config.PY_OPTIK_DIR})")
+            subprocess.Popen(cmd, cwd=str(config.PY_OPTIK_DIR))
+            self.update_status("Optik Okuyucu başlatıldı")
+            
+        except Exception as e:
+            logger.error(f"Optik Okuyucu başlatma hatası: {e}", exc_info=True)
+            messagebox.showerror("Hata", f"Optik Okuyucu başlatılamadı:\n{str(e)}")
 
     def on_closing(self):
         try:
