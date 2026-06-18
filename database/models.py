@@ -33,6 +33,8 @@ class Question(Base):
     question_number = Column(String(50), nullable=True)
     question_text = Column(Text, nullable=False)
     question_image_path = Column(String(500), nullable=True)
+    # Görsel yolu (GUI image_path olarak erişiyor)
+    image_path = Column(String(500), nullable=True)
     option_a = Column(Text, nullable=True)
     option_a_image_path = Column(String(500), nullable=True)
     option_b = Column(Text, nullable=True)
@@ -47,6 +49,8 @@ class Question(Base):
     difficulty = Column(String(50), nullable=True)
     topic = Column(String(200), nullable=True)
     tags = Column(String(200), nullable=True)
+    # Soru türü: Genel | Vize | Final
+    question_type = Column(String(50), nullable=False, default='Genel')
     usage_count = Column(Integer, default=0)
     last_used = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.now)
@@ -63,19 +67,27 @@ class Question(Base):
         self.last_used = datetime.now()
 
     def __repr__(self):
-        return f"<Question(id={self.id}, course_id={self.course_id})>"
+        return f"<Question(id={self.id}, course_id={self.course_id}, type='{self.question_type}')>"
 
 class Exam(Base):
     __tablename__ = 'exams'
     
     id = Column(Integer, primary_key=True)
     course_id = Column(Integer, ForeignKey('courses.id'), nullable=False)
+    # Sınav adı (GUI bunu kullanıyor)
+    exam_name = Column(String(300), nullable=True)
     exam_type = Column(String(50), nullable=False)
     exam_group = Column(String(50), nullable=True)
-    exam_date = Column(DateTime, nullable=True)
+    exam_date = Column(String(50), nullable=True)
     academic_year = Column(String(50), nullable=True)
     semester = Column(String(50), nullable=True)
+    # Süre (dakika)
+    duration = Column(Integer, default=60)
+    question_count = Column(Integer, default=0)
     word_file_path = Column(String(500), nullable=True)
+    # word_file / key_file (GUI bunları kullanıyor)
+    word_file = Column(String(500), nullable=True)
+    key_file = Column(String(500), nullable=True)
     pdf_file_path = Column(String(500), nullable=True)
     answer_key_path = Column(String(500), nullable=True)
     total_questions = Column(Integer, default=0)
@@ -99,14 +111,14 @@ class ExamQuestion(Base):
     id = Column(Integer, primary_key=True)
     exam_id = Column(Integer, ForeignKey('exams.id'), nullable=False)
     question_id = Column(Integer, ForeignKey('questions.id'), nullable=False)
-    question_order = Column(Integer, nullable=False)
+    question_order = Column(Integer, nullable=True)
     points = Column(Float, default=0.0)
     
     exam = relationship('Exam', back_populates='exam_questions')
     question = relationship('Question', back_populates='exam_questions')
 
     def __repr__(self):
-        return f"<ExamQuestion(exam_id={self.exam_id}, question_id={self.question_id}, order={self.question_order})>"
+        return f"<ExamQuestion(exam_id={self.exam_id}, question_id={self.question_id})>"
 
 class Student(Base):
     __tablename__ = 'students'

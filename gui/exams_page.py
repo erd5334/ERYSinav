@@ -101,7 +101,7 @@ class ExamsPage(ctk.CTkFrame):
         ctk.CTkLabel(form_frame, text='Sınav Türü:*', anchor='w').grid(
             row=row, column=0, sticky='w', pady=10, padx=(0, 10))
         self.exam_type_combo = ctk.CTkComboBox(
-            form_frame, values=config.EXAM_TYPES)
+            form_frame, values=config.EXAM_TYPES, command=self.on_exam_type_change)
         self.exam_type_combo.grid(row=row, column=1, sticky='ew', pady=10)
         self.exam_type_combo.set(config.EXAM_TYPES[0])
         row += 1
@@ -399,6 +399,33 @@ class ExamsPage(ctk.CTkFrame):
 
     def on_course_change(self, value=None):
         """Ders değiştiğinde mevcut soru sayısını güncelle"""
+        self._update_available_count()
+
+    def on_exam_type_change(self, value=None):
+        """Sınav türü değişince mevcut soru sayısını güncelle"""
+        self._update_available_count()
+
+    def _get_question_type_filter(self, exam_type: str):
+        """
+        Sınav türüne göre hangi soru türlerinin dahil edileçeğini döndür.
+        - Vize      → ['Vize', 'Genel']
+        - Final     → ['Final', 'Genel']
+        - Bütünleme → ['Vize', 'Final', 'Genel']  (tümü)
+        - Mazeret   → ['Vize', 'Final', 'Genel']  (tümü)
+        - Quiz/Diğer→ ['Genel']  (sadece genel)
+        """
+        et = exam_type.strip() if exam_type else ''
+        if et == 'Vize':
+            return ['Vize', 'Genel']
+        elif et == 'Final':
+            return ['Final', 'Genel']
+        elif et in ('Bütünleme', 'Mazeret'):
+            return ['Vize', 'Final', 'Genel']
+        else:
+            return ['Vize', 'Final', 'Genel']  # Quiz vb. için hepsini göster
+
+    def _update_available_count(self):
+        """Seçili ders + sınav türüne göre mevcut soru sayısını güncelle."""
         course_text = self.course_combo.get()
         if not course_text or ' - ' not in course_text:
             self.available_label.configure(text='(Mevcut: -)')
@@ -409,10 +436,16 @@ class ExamsPage(ctk.CTkFrame):
         if not course:
             return
 
+        exam_type = self.exam_type_combo.get()
+        allowed_types = self._get_question_type_filter(exam_type)
+
         try:
             with db_manager.session_scope() as session:
-                q_count = session.query(Question).filter_by(
-                    course_id=course.id, is_active=True).count()
+                q_count = session.query(Question).filter(
+                    Question.course_id == course.id,
+                    Question.is_active == True,
+                    Question.question_type.in_(allowed_types)
+                ).count()
                 self.available_label.configure(text=f'(Mevcut: {q_count})')
         except Exception as e:
             logger.warning(f'Soru sayısı alınamadı: {e}')
@@ -462,10 +495,15 @@ class ExamsPage(ctk.CTkFrame):
             pass
 
         try:
-            # Soruları çek
+            # Soruları çek — sınav türüne göre filtrele
+            allowed_types = self._get_question_type_filter(exam_type)
             with db_manager.session_scope() as session:
-                base_query = session.query(Question).filter_by(
-                    course_id=course.id, is_active=True)
+                from sqlalchemy import Column as _Col
+                base_query = session.query(Question).filter(
+                    Question.course_id == course.id,
+                    Question.is_active == True,
+                    Question.question_type.in_(allowed_types)
+                )
 
                 if easy_pct is not None and medium_pct is not None and hard_pct is not None:
                     # Zorluk bazlı seçim
@@ -492,7 +530,9 @@ class ExamsPage(ctk.CTkFrame):
                         messagebox.showwarning(
                             'Uyarı',
                             f'Yeterli soru yok! Mevcut: {len(all_qs)}, '
-                            f'İstenen: {q_count}')
+                            f'İstenen: {q_count}\n'
+                            f'(Sınav türü: {exam_type} → '
+                            f'Soru türleri: {", ".join(allowed_types)})')
                         if not messagebox.askyesno(
                                 'Devam?',
                                 f'Mevcut {len(all_qs)} soruyla devam edilsin mi?'):
@@ -525,7 +565,7 @@ class ExamsPage(ctk.CTkFrame):
                     eq = ExamQuestion(
                         exam_id=exam.id,
                         question_id=q.id,
-                        order=order
+                        question_order=order
                     )
                     session.add(eq)
 

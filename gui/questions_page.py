@@ -109,6 +109,17 @@ class QuestionsPage(ctk.CTkFrame):
         self.course_filter.grid(row=0, column=1, sticky='ew', padx=(5, 0), pady=5)
         self.course_filter.set('Tümü')
 
+        # Soru türü filtresi
+        ctk.CTkLabel(filter_frame, text='Tür:').grid(
+            row=1, column=0, sticky='w', pady=5)
+        self.type_filter = ctk.CTkComboBox(
+            filter_frame,
+            values=['Tümü', 'Genel', 'Vize', 'Final'],
+            command=self.filter_questions
+        )
+        self.type_filter.grid(row=1, column=1, sticky='ew', padx=(5, 0), pady=5)
+        self.type_filter.set('Tümü')
+
         # Arama
         search_frame = ctk.CTkFrame(list_frame, fg_color='transparent')
         search_frame.grid(row=1, column=0, columnspan=2, sticky='ew', padx=10,
@@ -138,7 +149,7 @@ class QuestionsPage(ctk.CTkFrame):
         style.map('Questions.Treeview', background=[('selected', sel_bg)],
                   foreground=[('selected', 'white')])
 
-        cols = ('ders', 'soru', 'zorluk', 'gorsel')
+        cols = ('ders', 'tur', 'soru', 'zorluk', 'gorsel')
         self.questions_tree = ttk.Treeview(
             list_frame, columns=cols, show='headings',
             style='Questions.Treeview', selectmode='browse'
@@ -146,6 +157,8 @@ class QuestionsPage(ctk.CTkFrame):
 
         self.questions_tree.heading('ders', text='Ders',
                                     command=lambda: self._sort_tree('ders'))
+        self.questions_tree.heading('tur', text='Tür',
+                                    command=lambda: self._sort_tree('tur'))
         self.questions_tree.heading('soru', text='Soru Metni',
                                     command=lambda: self._sort_tree('soru'))
         self.questions_tree.heading('zorluk', text='Zorluk',
@@ -153,10 +166,11 @@ class QuestionsPage(ctk.CTkFrame):
         self.questions_tree.heading('gorsel', text='Görsel',
                                     command=lambda: self._sort_tree('gorsel'))
 
-        self.questions_tree.column('ders', width=70, minwidth=60, stretch=False)
-        self.questions_tree.column('soru', width=180, minwidth=100, stretch=True)
-        self.questions_tree.column('zorluk', width=60, minwidth=50, stretch=False)
-        self.questions_tree.column('gorsel', width=55, minwidth=40, stretch=False)
+        self.questions_tree.column('ders', width=65, minwidth=55, stretch=False)
+        self.questions_tree.column('tur', width=65, minwidth=55, stretch=False)
+        self.questions_tree.column('soru', width=170, minwidth=100, stretch=True)
+        self.questions_tree.column('zorluk', width=55, minwidth=45, stretch=False)
+        self.questions_tree.column('gorsel', width=50, minwidth=40, stretch=False)
 
         self.questions_tree.tag_configure('odd', background=bg)
         self.questions_tree.tag_configure('even', background=row_alt)
@@ -219,26 +233,34 @@ class QuestionsPage(ctk.CTkFrame):
         self.correct_answer.grid(row=7, column=1, sticky='ew', pady=8)
         self.correct_answer.set('A')
 
+        # Soru türü
+        ctk.CTkLabel(form_frame, text='Soru Türü:*', anchor='w').grid(
+            row=8, column=0, sticky='w', pady=8, padx=(0, 10))
+        self.question_type_combo = ctk.CTkComboBox(
+            form_frame, values=['Genel', 'Vize', 'Final'])
+        self.question_type_combo.grid(row=8, column=1, sticky='ew', pady=8)
+        self.question_type_combo.set('Genel')
+
         # Zorluk
         ctk.CTkLabel(form_frame, text='Zorluk:', anchor='w').grid(
-            row=8, column=0, sticky='w', pady=8, padx=(0, 10))
+            row=9, column=0, sticky='w', pady=8, padx=(0, 10))
         self.difficulty = ctk.CTkComboBox(
             form_frame, values=['easy', 'medium', 'hard'])
-        self.difficulty.grid(row=8, column=1, sticky='ew', pady=8)
+        self.difficulty.grid(row=9, column=1, sticky='ew', pady=8)
         self.difficulty.set('medium')
 
         # Konu
         ctk.CTkLabel(form_frame, text='Konu:', anchor='w').grid(
-            row=9, column=0, sticky='w', pady=8, padx=(0, 10))
+            row=10, column=0, sticky='w', pady=8, padx=(0, 10))
         self.topic_entry = ctk.CTkEntry(form_frame, placeholder_text='Konusu...')
-        self.topic_entry.grid(row=9, column=1, sticky='ew', pady=8)
+        self.topic_entry.grid(row=10, column=1, sticky='ew', pady=8)
 
         # Etiketler
         ctk.CTkLabel(form_frame, text='Etiketler:', anchor='w').grid(
-            row=10, column=0, sticky='w', pady=8, padx=(0, 10))
+            row=11, column=0, sticky='w', pady=8, padx=(0, 10))
         self.tags_entry = ctk.CTkEntry(
             form_frame, placeholder_text='Virgülle ayırın...')
-        self.tags_entry.grid(row=10, column=1, sticky='ew', pady=8)
+        self.tags_entry.grid(row=11, column=1, sticky='ew', pady=8)
 
         # Görsel bölümü
         self.create_image_section()
@@ -510,6 +532,7 @@ class QuestionsPage(ctk.CTkFrame):
                         difficulty=q.difficulty,
                         topic=getattr(q, 'topic', ''),
                         tags=getattr(q, 'tags', ''),
+                        question_type=getattr(q, 'question_type', 'Genel') or 'Genel',
                         image_path=getattr(q, 'image_path', None),
                         is_active=q.is_active
                     ))
@@ -528,18 +551,22 @@ class QuestionsPage(ctk.CTkFrame):
         self.filtered_questions = list(to_display)
         self.questions_tree.delete(*self.questions_tree.get_children())
 
+        # Tür renk etiketleri
+        tur_icon_map = {'Vize': '📘', 'Final': '📕', 'Genel': '📗'}
         difficulty_map = {'easy': '😊', 'medium': '😐', 'hard': '😓'}
         for idx, q in enumerate(self.filtered_questions):
             diff_icon = difficulty_map.get(q.difficulty, '❓')
             has_image = '🖼️' if q.image_path else '-'
-            preview = (q.question_text or '')[:60].replace('\n', ' ')
-            if len(q.question_text or '') > 60:
+            preview = (q.question_text or '')[:55].replace('\n', ' ')
+            if len(q.question_text or '') > 55:
                 preview += '...'
+            q_type = getattr(q, 'question_type', 'Genel') or 'Genel'
+            tur_text = f"{tur_icon_map.get(q_type, '📗')} {q_type}"
             tag = 'even' if idx % 2 == 0 else 'odd'
             self.questions_tree.insert(
                 '', 'end',
                 iid=str(q.id),
-                values=(q.course_code, preview, diff_icon, has_image),
+                values=(q.course_code, tur_text, preview, diff_icon, has_image),
                 tags=(tag,)
             )
 
@@ -567,6 +594,7 @@ class QuestionsPage(ctk.CTkFrame):
 
         col_map = {
             'ders': 'course_code',
+            'tur': 'question_type',
             'soru': 'question_text',
             'zorluk': 'difficulty',
             'gorsel': 'image_path'
@@ -583,6 +611,7 @@ class QuestionsPage(ctk.CTkFrame):
         """Filtrele"""
         search = self.search_entry.get().lower()
         course_filter = self.course_filter.get()
+        type_filter = self.type_filter.get()
 
         filtered = self.questions
 
@@ -590,6 +619,13 @@ class QuestionsPage(ctk.CTkFrame):
         if course_filter and course_filter != 'Tümü':
             code = course_filter.split(' - ')[0]
             filtered = [q for q in filtered if q.course_code == code]
+
+        # Tür filtresi
+        if type_filter and type_filter != 'Tümü':
+            filtered = [
+                q for q in filtered
+                if (getattr(q, 'question_type', 'Genel') or 'Genel') == type_filter
+            ]
 
         # Arama filtresi
         if search:
@@ -629,6 +665,8 @@ class QuestionsPage(ctk.CTkFrame):
         # Diğer
         self.correct_answer.set(question.correct_answer or 'A')
         self.difficulty.set(question.difficulty or 'medium')
+        q_type = getattr(question, 'question_type', 'Genel') or 'Genel'
+        self.question_type_combo.set(q_type)
 
         self.topic_entry.delete(0, 'end')
         self.topic_entry.insert(0, question.topic or '')
@@ -691,6 +729,7 @@ class QuestionsPage(ctk.CTkFrame):
                 q.option_e = self.option_entries['option_e'].get().strip()
                 q.correct_answer = self.correct_answer.get()
                 q.difficulty = self.difficulty.get()
+                q.question_type = self.question_type_combo.get() or 'Genel'
                 q.topic = self.topic_entry.get().strip()
                 q.tags = self.tags_entry.get().strip()
                 q.image_path = self.image_paths.get('question')
@@ -741,6 +780,7 @@ class QuestionsPage(ctk.CTkFrame):
             entry.delete(0, 'end')
         self.correct_answer.set('A')
         self.difficulty.set('medium')
+        self.question_type_combo.set('Genel')
         self.topic_entry.delete(0, 'end')
         self.tags_entry.delete(0, 'end')
         self.clear_image()

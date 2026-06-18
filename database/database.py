@@ -38,6 +38,7 @@ class DatabaseManager:
 
             self._session_factory = sessionmaker(bind=self._engine)
             self.create_tables()
+            self.migrate_schema()
             logger.info(f"Veritabanı başarıyla başlatıldı: {config.DATABASE_PATH}")
         except Exception as e:
             logger.error(f"Veritabanı başlatma hatası: {e}")
@@ -50,6 +51,39 @@ class DatabaseManager:
         except Exception as e:
             logger.error(f"Tablo oluşturma hatası: {e}")
             raise
+
+    def migrate_schema(self):
+        """Mevcut veritabanına eksik sütunları ekle (idempotent)."""
+        # Her madde: (tablo, sütun, tür)
+        migrations = [
+            ("questions",     "question_type",  "TEXT NOT NULL DEFAULT 'Genel'"),
+            ("questions",     "image_path",      "TEXT"),
+            ("exams",         "exam_name",       "TEXT"),
+            ("exams",         "duration",        "INTEGER DEFAULT 60"),
+            ("exams",         "question_count",  "INTEGER DEFAULT 0"),
+            ("exams",         "word_file",       "TEXT"),
+            ("exams",         "key_file",        "TEXT"),
+            # 'order' SQLite rezerve kelimesidir, exam_question_order kullaniyoruz
+            ("exam_questions", "exam_question_order", "INTEGER"),
+        ]
+        try:
+            with self._engine.connect() as conn:
+                for table, column, col_type in migrations:
+                    # Mevcut sütunları kontrol et
+                    result = conn.execute(
+                        __import__('sqlalchemy').text(f"PRAGMA table_info({table})")
+                    )
+                    existing = [row[1] for row in result]
+                    if column not in existing:
+                        conn.execute(
+                            __import__('sqlalchemy').text(
+                                f"ALTER TABLE {table} ADD COLUMN {column} {col_type}"
+                            )
+                        )
+                        logger.info(f"Migrate: {table}.{column} eklendi")
+                conn.commit()
+        except Exception as e:
+            logger.warning(f"Şema migrasyonu uyarısı: {e}")
 
     def drop_tables(self):
         try:
