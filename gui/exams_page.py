@@ -151,6 +151,25 @@ class ExamsPage(ctk.CTkFrame):
         self.available_label.grid(row=0, column=1)
         row += 1
 
+        # Manuel Soru Seçimi
+        self.manual_select_var = ctk.BooleanVar(value=False)
+        self.chk_manual_select = ctk.CTkCheckBox(
+            form_frame, text='Manuel Soru Seç',
+            variable=self.manual_select_var,
+            command=self.toggle_manual_selection
+        )
+        self.chk_manual_select.grid(row=row, column=0, sticky='w', pady=10)
+        
+        self.btn_select_questions = ctk.CTkButton(
+            form_frame, text='Soruları Seç (0 seçildi)...',
+            command=self.open_manual_selection_dialog,
+            state='disabled'
+        )
+        self.btn_select_questions.grid(row=row, column=1, sticky='ew', pady=10)
+        
+        self.selected_manual_question_ids = []
+        row += 1
+
         # Seçenekler
         options_frame = ctk.CTkFrame(settings_frame)
         options_frame.grid(row=2, column=0, sticky='ew', padx=20, pady=(0, 20))
@@ -183,6 +202,15 @@ class ExamsPage(ctk.CTkFrame):
         self.font_size_combo = ctk.CTkComboBox(options_frame, values=['9', '10', '11', '12'], width=80)
         self.font_size_combo.grid(row=4, column=1, sticky='w', padx=10, pady=5)
         self.font_size_combo.set('11')
+
+        ctk.CTkLabel(options_frame, text='Mükerrer Engelleme:').grid(row=5, column=0, sticky='w', padx=10, pady=5)
+        self.anti_collision_combo = ctk.CTkComboBox(
+            options_frame,
+            values=['Engelleme Yok', 'Son 6 Ay', 'Son 1 Yıl', 'Daha Önce Kullanılanlar'],
+            width=170
+        )
+        self.anti_collision_combo.grid(row=5, column=1, sticky='w', padx=10, pady=5)
+        self.anti_collision_combo.set('Engelleme Yok')
 
         # Zorluk dağılımı
         difficulty_frame = ctk.CTkFrame(settings_frame)
@@ -470,11 +498,17 @@ class ExamsPage(ctk.CTkFrame):
             messagebox.showwarning('Uyarı', 'Geçersiz ders seçimi!')
             return
 
-        try:
-            q_count = int(self.question_count_entry.get().strip() or '20')
-        except ValueError:
-            messagebox.showwarning('Uyarı', 'Geçerli bir soru sayısı girin!')
-            return
+        if self.manual_select_var.get():
+            if not self.selected_manual_question_ids:
+                messagebox.showwarning('Uyarı', 'Lütfen önce "Soruları Seç..." butonuna tıklayarak sınav sorularını seçin!')
+                return
+            q_count = len(self.selected_manual_question_ids)
+        else:
+            try:
+                q_count = int(self.question_count_entry.get().strip() or '20')
+            except ValueError:
+                messagebox.showwarning('Uyarı', 'Geçerli bir soru sayısı girin!')
+                return
 
         try:
             duration = int(self.duration_entry.get().strip() or '60')
@@ -511,40 +545,65 @@ class ExamsPage(ctk.CTkFrame):
                     Question.question_type.in_(allowed_types)
                 )
 
-                if easy_pct is not None and medium_pct is not None and hard_pct is not None:
-                    # Zorluk bazlı seçim
-                    total = easy_pct + medium_pct + hard_pct
-                    n_easy = round(q_count * easy_pct / total)
-                    n_medium = round(q_count * medium_pct / total)
-                    n_hard = q_count - n_easy - n_medium
-
-                    easy_qs = base_query.filter(
-                        Question.difficulty == 'easy').all()
-                    med_qs = base_query.filter(
-                        Question.difficulty == 'medium').all()
-                    hard_qs = base_query.filter(
-                        Question.difficulty == 'hard').all()
-
-                    selected = (
-                        random.sample(easy_qs, min(n_easy, len(easy_qs))) +
-                        random.sample(med_qs, min(n_medium, len(med_qs))) +
-                        random.sample(hard_qs, min(n_hard, len(hard_qs)))
-                    )
+                if self.manual_select_var.get():
+                    # Manuel Soru Seçimi Aktifse
+                    selected_unsorted = session.query(Question).filter(
+                        Question.id.in_(self.selected_manual_question_ids)
+                    ).all()
+                    # Seçim sırasını koru
+                    selected_map = {q.id: q for q in selected_unsorted}
+                    selected = [selected_map[qid] for qid in self.selected_manual_question_ids if qid in selected_map]
                 else:
-                    all_qs = base_query.all()
-                    if len(all_qs) < q_count:
-                        messagebox.showwarning(
-                            'Uyarı',
-                            f'Yeterli soru yok! Mevcut: {len(all_qs)}, '
-                            f'İstenen: {q_count}\n'
-                            f'(Sınav türü: {exam_type} → '
-                            f'Soru türleri: {", ".join(allowed_types)})')
-                        if not messagebox.askyesno(
-                                'Devam?',
-                                f'Mevcut {len(all_qs)} soruyla devam edilsin mi?'):
-                            return
-                        q_count = len(all_qs)
-                    selected = random.sample(all_qs, min(q_count, len(all_qs)))
+                    # Otomatik Soru Seçimi Aktifse - Mükerrer Soru Filtreleri
+                    anti_col = self.anti_collision_combo.get()
+                    if anti_col == 'Son 6 Ay':
+                        from datetime import datetime as dt, timedelta
+                        six_months_ago = dt.now() - timedelta(days=180)
+                        base_query = base_query.filter(
+                            (Question.last_used == None) | (Question.last_used < six_months_ago)
+                        )
+                    elif anti_col == 'Son 1 Yıl':
+                        from datetime import datetime as dt, timedelta
+                        one_year_ago = dt.now() - timedelta(days=365)
+                        base_query = base_query.filter(
+                            (Question.last_used == None) | (Question.last_used < one_year_ago)
+                        )
+                    elif anti_col == 'Daha Önce Kullanılanlar':
+                        base_query = base_query.filter(
+                            (Question.usage_count == 0) | (Question.usage_count == None)
+                        )
+
+                    if easy_pct is not None and medium_pct is not None and hard_pct is not None:
+                        # Zorluk bazlı seçim
+                        total = easy_pct + medium_pct + hard_pct
+                        n_easy = round(q_count * easy_pct / total)
+                        n_medium = round(q_count * medium_pct / total)
+                        n_hard = q_count - n_easy - n_medium
+
+                        easy_qs = base_query.filter(Question.difficulty == 'easy').all()
+                        med_qs = base_query.filter(Question.difficulty == 'medium').all()
+                        hard_qs = base_query.filter(Question.difficulty == 'hard').all()
+
+                        selected = (
+                            random.sample(easy_qs, min(n_easy, len(easy_qs))) +
+                            random.sample(med_qs, min(n_medium, len(med_qs))) +
+                            random.sample(hard_qs, min(n_hard, len(hard_qs)))
+                        )
+                    else:
+                        all_qs = base_query.all()
+                        if len(all_qs) < q_count:
+                            messagebox.showwarning(
+                                'Uyarı',
+                                f'Yeterli soru yok! Mevcut: {len(all_qs)}, '
+                                f'İstenen: {q_count}\n'
+                                f'(Sınav türü: {exam_type} → '
+                                f'Soru türleri: {", ".join(allowed_types)})')
+                            if not messagebox.askyesno(
+                                    'Devam?',
+                                    f'Mevcut {len(all_qs)} soruyla devam edilsin mi?'):
+                                return
+                            q_count = len(all_qs)
+                        selected = random.sample(all_qs, min(q_count, len(all_qs)))
 
                 if shuffle_q:
                     random.shuffle(selected)
@@ -574,6 +633,10 @@ class ExamsPage(ctk.CTkFrame):
                         question_order=order
                     )
                     session.add(eq)
+                    
+                    # Soru istatistiklerini güncelle
+                    q.usage_count = (q.usage_count or 0) + 1
+                    q.last_used = datetime.now()
 
                 exam_id = exam.id
 
@@ -590,14 +653,19 @@ class ExamsPage(ctk.CTkFrame):
                         opt_details['E'] = {'text': q.option_e or '', 'image': getattr(q, 'option_e_image_path', None)}
 
                     if shuffle_a:
-                        items = list(opt_details.items())
-                        random.shuffle(items)
-                        correct_val = opt_details.get(q.correct_answer.upper(), {'text': '', 'image': None})
-                        new_opt_details = {chr(65 + i): v for i, (_, v) in enumerate(items)}
-                        new_correct = next(
-                            (k for k, v in new_opt_details.items() if v == correct_val),
-                            q.correct_answer.upper()
-                        )
+                        active_keys = sorted(opt_details.keys())
+                        shuffled_keys = active_keys.copy()
+                        random.shuffle(shuffled_keys)
+                        
+                        new_opt_details = {}
+                        new_correct = q.correct_answer.upper() if q.correct_answer else 'A'
+                        
+                        for i, old_key in enumerate(shuffled_keys):
+                            new_key = active_keys[i]
+                            new_opt_details[new_key] = opt_details[old_key]
+                            if old_key == (q.correct_answer.upper() if q.correct_answer else 'A'):
+                                new_correct = new_key
+                                
                         opt_details = new_opt_details
                     else:
                         new_correct = q.correct_answer.upper() if q.correct_answer else 'A'
@@ -681,9 +749,40 @@ class ExamsPage(ctk.CTkFrame):
             logger.error(f'Sinav olusturma hatasi: {e}', exc_info=True)
             messagebox.showerror('Hata', f'Sinav olusturulurken hata:\n{e}')
 
-    def select_questions(self):
-        """Manuel soru seçimi (gelecek geliştirme için)"""
-        messagebox.showinfo('Bilgi', 'Manuel soru seçimi henüz geliştirilmektedir.')
+    def toggle_manual_selection(self):
+        if self.manual_select_var.get():
+            self.question_count_entry.configure(state='disabled')
+            self.btn_select_questions.configure(state='normal')
+            self.selected_manual_question_ids = []
+            self.btn_select_questions.configure(text='Soruları Seç (0 seçildi)...')
+        else:
+            self.question_count_entry.configure(state='normal')
+            self.btn_select_questions.configure(state='disabled')
+
+    def open_manual_selection_dialog(self):
+        course_text = self.course_combo.get()
+        if not course_text or course_text in ('Önce ders ekleyin', 'Yükleniyor...'):
+            messagebox.showwarning('Uyarı', 'Lütfen önce bir ders seçin!')
+            return
+            
+        course_code = course_text.split(' - ')[0]
+        course = next((c for c in self.courses if c.code == course_code), None)
+        if not course:
+            return
+            
+        exam_type = self.exam_type_combo.get()
+        allowed_types = self._get_question_type_filter(exam_type)
+        
+        from gui.manual_selection_dialog import ManualSelectionDialog
+        dialog = ManualSelectionDialog(
+            self,
+            course_id=course.id,
+            allowed_types=allowed_types,
+            selected_question_ids=self.selected_manual_question_ids
+        )
+        if dialog.result is not None:
+            self.selected_manual_question_ids = dialog.result
+            self.btn_select_questions.configure(text=f'Soruları Seç ({len(self.selected_manual_question_ids)} seçildi)...')
 
     def preview_exam(self):
         """Sınav önizlemesi"""
